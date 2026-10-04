@@ -1,10 +1,10 @@
 %=============================================================================
-%  Medieval Field Cannon -- OpenGL project report
+%  Medieval Field Cannon in C++ / OpenGL 3.3 core
 %  Build:  pdflatex report.tex   (run twice for the table of contents)
 %=============================================================================
 \documentclass[11pt,a4paper]{article}
 
-\usepackage[a4paper,margin=24mm,headheight=14pt]{geometry}
+\usepackage[a4paper,margin=22mm,headheight=14pt]{geometry}
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}
 \usepackage{amsmath,amssymb,bm}
@@ -22,19 +22,20 @@
 \usetikzlibrary{positioning,arrows.meta,calc,fit,backgrounds,decorations.pathreplacing}
 \usepackage[hidelinks]{hyperref}
 
-\graphicspath{{images/}}
+\graphicspath{{images/}{images/walkthrough/}}
 
 \definecolor{accent}{RGB}{140,72,20}
 \definecolor{codebg}{RGB}{247,247,244}
 \definecolor{codekw}{RGB}{20,90,150}
 \definecolor{codecm}{RGB}{110,120,110}
+\definecolor{codestr}{RGB}{160,40,40}
 
 \lstdefinestyle{code}{
   backgroundcolor=\color{codebg},
   basicstyle=\ttfamily\scriptsize,
   keywordstyle=\color{codekw}\bfseries,
   commentstyle=\color{codecm}\itshape,
-  stringstyle=\color{accent},
+  stringstyle=\color{codestr},
   numbers=none, frame=single, rulecolor=\color{black!20},
   breaklines=true, showstringspaces=false,
   columns=fullflexible, xleftmargin=6pt, framexleftmargin=6pt,
@@ -53,11 +54,12 @@
 
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[L]{\small Medieval Field Cannon --- OpenGL}
+\fancyhead[L]{\small Medieval Field Cannon --- C++ / OpenGL}
 \fancyhead[R]{\small\thepage}
 \renewcommand{\headrulewidth}{0.3pt}
 
 \newcommand{\bs}{\bm{s}}
+\newcommand{\bv}{\bm{v}}
 \newcommand{\bN}{\bm{N}}
 \newcommand{\bL}{\bm{L}}
 \newcommand{\bV}{\bm{V}}
@@ -66,11 +68,14 @@
 \newcommand{\bP}{\bm{P}}
 \newcommand{\bM}{\bm{M}}
 \newcommand{\bT}{\bm{T}}
+\newcommand{\bS}{\bm{S}}
+\newcommand{\bC}{\bm{C}}
+\newcommand{\bQ}{\bm{Q}}
 \newcommand{\key}[1]{\textsf{\small\textbf{#1}}}
 
-\title{\vspace{-14mm}\textbf{A Medieval Field Cannon in OpenGL}\\[2mm]
-       \large Hierarchical Transformations, Rolling Constraints and the
-       Phong Reflection Model}
+\title{\vspace{-14mm}\textbf{A Medieval Field Cannon in C++ / OpenGL}\\[2mm]
+       \large Hierarchical Transforms, Ballistic Physics, and a Medieval Scene
+       built Phrase by Phrase}
 \author{Computer Graphics Project Report}
 \date{\today}
 
@@ -80,18 +85,22 @@
 
 \begin{abstract}
 \noindent
-This report documents a real-time 3-D scene, written in Python with PyOpenGL and
-freeglut, of a medieval field cannon on a wheeled carriage.  The carriage can be
-driven along the ground with the wheels rolling at exactly the right rate, the
-barrel elevates about its trunnions, recoils along its own axis as a damped
-spring when fired, and launches a cannonball that follows a ballistic arc.  The
-whole assembly is built from analytic primitives whose surface normals are
-derived rather than approximated, and is lit by a single movable point light
-using the full Phong reflection model --- evaluated \emph{per fragment} in GLSL,
-with a per-vertex fixed-function path available for direct comparison.  Every
-quantitative claim in this document is reproduced by \texttt{verify.py}, whose
-output is included verbatim in Appendix~\ref{app:verify}, and every figure is a
-real frame captured from the running program.
+This report documents a real-time 3-D scene, written in \textbf{C++} against
+the \textbf{OpenGL 3.3 core profile}, of three medieval field cannons standing
+on a grass field, aimed at a stone-and-timber fort gate.  The centre cannon
+can be driven across the ground (with its wheels rolling without slipping),
+its barrel can be elevated from $0^\circ$ to $45^\circ$ about the trunnion
+pivot, and pressing \key{Space} fires a cannon ball that follows a
+ballistic arc and breaks the bricks of the gate's two side walls.  The
+whole assembly --- cannons, wheels, barrels, fort gate, trees and wooden
+dummy robot --- is built from analytic primitives whose surface normals are
+derived from the geometry rather than approximated, lit by a single
+directional light using a per-vertex Lambert + ambient shading model in
+GLSL.  The report walks the work through in three phases: (1)~the cannon
+itself, (2)~the projectile and the breaking wall, (3)~replicating the
+cannon, the medieval fort gate, the trees, and the dummy target robot.
+Every figure is a real frame captured from the running program; every
+animation loop is documented alongside the class that implements it.
 \end{abstract}
 
 \vspace{-4mm}
@@ -103,32 +112,40 @@ real frame captured from the running program.
 %=============================================================================
 
 The brief was to build a scene that \emph{visibly} demonstrates a small set of
-core computer-graphics ideas rather than to build a large one.  The cannon is a
-good vehicle for this because each required concept maps onto a physical part of
-the object:
+core computer-graphics ideas rather than to build a large one.  A cannon
+projectile on a medieval field is a good vehicle for this because each
+required concept maps onto a physical part of the object:
 
 \begin{itemize}[itemsep=2pt,topsep=3pt]
-  \item the carriage \textbf{translates}, and its wheels must \textbf{rotate} at
-        the rate implied by that translation, or the illusion collapses
+  \item the carriage \textbf{translates}, and its wheels must \textbf{rotate}
+        at the rate implied by that translation, or the illusion collapses
         instantly;
-  \item the barrel \textbf{rotates about a pivot that is itself carried by the
-        moving carriage}, which is exactly what a hierarchical transformation
-        is for;
-  \item the barrel \textbf{translates along its own rotated axis} when it
-        recoils, which cannot be expressed in world coordinates without first
-        composing the parent transforms;
-  \item the wooden carriage and the iron barrel react to light in obviously
-        different ways, which is the clearest possible evidence that a real
-        lighting model is running rather than flat colours.
+  \item the barrel \textbf{rotates about a pivot that is itself carried by
+        the moving carriage} --- which is exactly what a hierarchical
+        transformation is for;
+  \item the cannon ball follows a \textbf{ballistic trajectory} under
+        gravity, and \textbf{destroys} brick walls it touches;
+  \item the scene \textbf{scales}: replicating three cannons, a fort gate,
+        six trees and a dummy robot introduces no new mechanism, only a
+        repeated instantiation of classes built in phase 1.
 \end{itemize}
+
+The deliverable is split across three phases.  \textbf{Phase~1} builds the
+cannon itself --- carriage, two wheels, barrel, elevation, lighting.
+\textbf{Phase~2} adds the projectile (semi-implicit Euler integration of
+gravity) and a wall of breakable bricks with sphere-vs-AABB collision
+detection.  \textbf{Phase~3} replicates the cannon three times, replaces
+the flat wall with a medieval fort gate (two pillars + lintel + two
+breakable brick stacks flanking a doorway), places six trees behind the
+fort, and adds a wooden dummy robot inside the fort as a target.
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=\linewidth]{01_overview}
-  \caption{The complete scene.  Oak carriage, iron-tyred spoked wheels, brass
-  fittings and a cast-iron barrel, lit by one orbiting point light over a
-  1\,m reference grid.  Per-fragment Phong shading; exponential-squared fog
-  dissolves the far edge of the ground plane into the sky.}
+  \includegraphics[width=\linewidth]{p3_overview}
+  \caption{The complete Phase~3 scene.  Three field cannons on a grass
+  field, aimed at a stone-pillared fort gate with a wooden lintel; the
+  dummy robot is visible through the doorway; six trees line the horizon.
+  Per-vertex Lambert + ambient shading with a single directional light.}
   \label{fig:overview}
 \end{figure}
 
@@ -136,25 +153,36 @@ the object:
 
 \begin{table}[H]
 \centering\small
-\begin{tabular}{@{}p{58mm}p{60mm}p{30mm}@{}}
+\begin{tabular}{@{}p{52mm}p{60mm}p{36mm}@{}}
 \toprule
 \textbf{Requirement} & \textbf{Where it is implemented} & \textbf{Evidence} \\
 \midrule
-Translation & \texttt{Cannon.drive}, root \texttt{glTranslatef} & Fig.~\ref{fig:roll} \\
-Rotation (rolling) & $\varphi=-s/R$ in \texttt{Cannon.drive} & Fig.~\ref{fig:roll}, \S\ref{sec:roll} \\
-Rotation (elevation) & \texttt{glRotatef} at the trunnion pivot & Fig.~\ref{fig:elev} \\
-Hierarchical / composite transforms & \texttt{Cannon.draw} push/pop tree & \S\ref{sec:hier}, Fig.~\ref{fig:tree} \\
-Perspective projection + camera & \texttt{gluPerspective}, \texttt{gluLookAt} & \S\ref{sec:view}, Fig.~\ref{fig:cams} \\
-Phong lighting (ambient, diffuse, specular) & \texttt{lighting.py} + GLSL & \S\ref{sec:phong}, Fig.~\ref{fig:lightoff} \\
-Two contrasting materials & matte oak vs.\ shiny cast iron & Fig.~\ref{fig:materials} \\
-Continuous animation / interactivity & recoil spring, projectile, light orbit & Fig.~\ref{fig:recoil},~\ref{fig:arc} \\
+Translation & \texttt{Carriage.MoveForward} (\texttt{Cannon} forwards) &
+   Fig.~\ref{fig:wheelroll} \\
+Rotation (rolling) & $\varphi = -s/R$ in \texttt{Wheel.Roll} &
+   Fig.~\ref{fig:wheelroll} \\
+Rotation (elevation) & \texttt{Shaft.Elevate} about the trunnion pivot &
+   Fig.~\ref{fig:elev0-45} \\
+Hierarchical / composite transforms & \texttt{Cannon.GetMatrix()} parents
+   wheels + barrel, \texttt{Transform} builds M from R, S, T &
+   \S\ref{sec:hier}, Fig.~\ref{fig:hier} \\
+Lambert + ambient lighting & \texttt{lit.vert}/\texttt{lit.frag} (GLSL) &
+   \S\ref{sec:shading}, Fig.~\ref{fig:unlit-lit} \\
+Two contrasting materials & matte oak carriage vs.\ brass + cast-iron barrel &
+   Fig.~\ref{fig:w1}, \ref{fig:phases} \\
+Ballistic projectile & semi-implicit Euler in \texttt{Projectile::Update} &
+   \S\ref{sec:phys}, Fig.~\ref{fig:p2capture-driven} \\
+Breakable wall & \texttt{FortGate::CheckHit} (sphere vs.\ AABB) &
+   \S\ref{sec:break}, Fig.~\ref{fig:p2capture-driven},~\ref{fig:p3capture} \\
+Replicated scene & \texttt{Cannon} wrapper + \texttt{FortGate}, \texttt{Tree},
+   \texttt{Robot} & Fig.~\ref{fig:overview}, \ref{fig:p3capture} \\
 \bottomrule
 \end{tabular}
 \caption{Mapping from the assessment criteria to the implementation.}
 \end{table}
 
 %=============================================================================
-\section{How to run the project}
+\section{How to build and run the project}
 %=============================================================================
 
 \subsection{Prerequisites}
@@ -163,71 +191,85 @@ Continuous animation / interactivity & recoil spring, projectile, light orbit & 
 \centering\small
 \begin{tabular}{@{}lll@{}}
 \toprule
-\textbf{Component} & \textbf{Requirement} & \textbf{Version used for this report} \\
+\textbf{Component} & \textbf{Requirement} & \textbf{Version used here} \\
 \midrule
-Python      & 3.9 or newer            & 3.14.5 (64-bit, Windows 11) \\
-PyOpenGL    & $\ge$ 3.1.7             & 3.1.10 \\
-NumPy       & $\ge$ 1.24              & 2.4.4 \\
-Pillow      & $\ge$ 10.0 (screenshots only) & 12.2.0 \\
-GPU / driver& OpenGL 2.0+ compatibility profile & AMD Radeon 760M, GL 4.6 compat.\ (GLSL 4.60) \\
+C++ compiler       & MinGW-w64 GCC 13+ (or any C++17 compiler) & GCC 16 (WinLibs) \\
+OpenGL loader      & GLAD (vendored)                            & bundled \\
+Window / input     & GLFW 3.x                                    & 3.5.1 (vendored) \\
+Math               & GLM (headers-only)                          & bundled \\
+Build tool         & GNU Make (or any \texttt{make})             & mingw32-make \\
+GPU / driver       & OpenGL 3.3 core profile or newer            & AMD Radeon 760M, GL 4.6 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \noindent
-On Windows the PyOpenGL wheel ships \texttt{freeglut64.vc14.dll} inside
-\texttt{OpenGL/DLLS/}, so \textbf{no separate freeglut download is needed}.  On
-Linux install \texttt{freeglut3-dev} (Debian/Ubuntu:
-\texttt{sudo apt install freeglut3-dev}); on macOS GLUT ships with the system
-but is deprecated, and the compatibility profile is capped at OpenGL 2.1 ---
-the program still runs, falling back where necessary.
+GLFW and GLAD are \emph{not} installed system-wide --- the \texttt{Makefile}
+links against a MinGW-compatible static GLFW library downloaded from the
+official GLFW 3.5.1 Windows binaries release, and against the \texttt{glad.c}
+file vendored in \texttt{Libraries/}.  No Visual Studio or VS Build Tools
+required.
 
 \subsection{Installation}
 
+The toolchain (GCC, GNU Make) is shipped by WinLibs MinGW-w64.  Install via:
 \begin{lstlisting}[language=bash]
-cd Graphics-project
-python -m pip install -r requirements.txt      # PyOpenGL, numpy, Pillow
-python test.py                                 # sanity check: a coloured triangle
+winget install --id BrechtSanders.WinLibs.POSIX.UCRT
+\end{lstlisting}
+\noindent
+\textbf{Important}: a shell or VS~Code window opened before the PATH change
+will not see it --- fully restart the shell, do not just open a new tab.
+
+Sanity check the toolchain:
+\begin{lstlisting}[language=bash]
+g++ --version          # GCC 16 (or newer)
+mingw32-make --version
+\end{lstlisting}
+
+\subsection{Building}
+
+\begin{lstlisting}[language=bash]
+cd Project1
+mingw32-make            # compiles to build_mingw\app.exe
+mingw32-make run        # build (if needed) + run
+mingw32-make clean      # deletes build_mingw\app.exe
+mingw32-make shots      # rebuild every walkthrough image
 \end{lstlisting}
 
 \noindent
-If \texttt{test.py} shows a red/green/blue triangle, the toolchain is ready.
-
-\subsection{Running}
-
+Or run the executable directly --- but \textbf{must run from inside
+\texttt{Project1/}}, because the GLSL shaders (\texttt{lit.vert},
+\texttt{lit.frag}) are loaded by relative path:
 \begin{lstlisting}[language=bash]
-python main.py                     # interactive scene
-python verify.py                   # numerical self-checks (no window needed)
-python main.py --shots docs/images # re-render every figure in this report, then exit
+cd Project1
+.\build_mingw\app.exe
 \end{lstlisting}
 
 \subsection{Controls}
 \label{sec:controls}
 
+The scene shows three cannons.  Only the \textbf{centre} cannon is keyboard-
+controlled; the two flanking ones are parked.
+
 \begin{table}[H]
 \centering\small
-\begin{tabular}{@{}llll@{}}
+\begin{tabular}{@{}ll@{}}
 \toprule
-\textbf{Key} & \textbf{Action} & \textbf{Key} & \textbf{Action} \\
+\textbf{Key} & \textbf{Action} \\
 \midrule
-\key{$\leftarrow$} / \key{$\rightarrow$} & drive backward / forward (wheels roll) & \key{L} & light on / off \\
-\key{$\uparrow$} / \key{$\downarrow$}    & elevate / depress the barrel ($0^\circ$--$45^\circ$) & \key{K} & light orbit on / off \\
-\key{Space} & fire: flash, recoil, cannonball & \key{N} & point light $\leftrightarrow$ directional \\
-\key{C} & cycle the five camera presets & \key{[} \key{]} & nudge the light azimuth \\
-mouse drag & orbit the camera & \key{F} & per-fragment Phong $\leftrightarrow$ per-vertex Gouraud \\
-wheel, \key{+} / \key{-} & zoom & \key{B} & Phong $\leftrightarrow$ Blinn--Phong specular \\
-\key{W} & wireframe & \key{M} & cycle the barrel material \\
-\key{G} & ground plane on / off & \key{T} & projectile trails on / off \\
-\key{J} & reference grid on / off & \key{X} & clear the projectiles \\
-\key{H} & help overlay & \key{U} & HUD on / off \\
-\key{R} & reset everything & \key{P} & save a PNG screenshot \\
-\key{Esc} / \key{Q} & quit & & \\
+\key{$\rightarrow$} & drive centre cannon forward (wheels roll without slipping) \\
+\key{$\leftarrow$}  & drive centre cannon backward \\
+\key{$\uparrow$}    & elevate barrel (clamped $0^\circ$--$45^\circ$) \\
+\key{$\downarrow$}  & depress barrel \\
+\key{Space}         & fire one cannon ball from the centre cannon (edge-detected) \\
+\key{Esc} / \key{Q} & quit \\
 \bottomrule
 \end{tabular}
-\caption{Complete key bindings.  The arrow keys are level-triggered: hold them.}
+\caption{Key bindings.  Movement and elevation are level-triggered (hold the
+key); fire is edge-triggered (one ball per press).}
 \end{table}
 
-\subsection{Files}
+\subsection{File layout}
 
 \begin{table}[H]
 \centering\small
@@ -235,18 +277,56 @@ wheel, \key{+} / \key{-} & zoom & \key{B} & Phong $\leftrightarrow$ Blinn--Phong
 \toprule
 \textbf{File} & \textbf{Responsibility} \\
 \midrule
-\texttt{main.py}       & Window and GL setup, camera, input handling, HUD, main loop, and the
-                         \texttt{--shots} driver that renders the report figures. \\
-\texttt{cannon.py}     & The \texttt{Cannon} class: dimensions, animation state, the transformation
-                         hierarchy, and the numpy mirror of that hierarchy used to locate the muzzle. \\
-\texttt{lighting.py}   & \texttt{Material} definitions, the \texttt{Light} rig, the GLSL Phong program,
-                         the fog setup and the \texttt{unlit} context manager. \\
-\texttt{projectile.py} & Cannonball integration, ground bounce, fading trail, and the closed-form
-                         range predictor used by the HUD. \\
-\texttt{utils.py}      & Analytic primitive meshes (box, frustum, tube, sphere, torus, ground) with
-                         derived normals, a display-list cache, and 2-D text helpers. \\
-\texttt{verify.py}     & Numerical checks of every formula quoted in this report. \\
-\texttt{test.py}       & Toolchain sanity check (single triangle). \\
+\texttt{Project1/Main.cpp}        & Window and GL setup, camera, input handling, the main
+                                     per-frame loop. \\
+\texttt{Project1/Dimensions.h}     & Every measurement of the cannon (metres), header-only. \\
+\texttt{Project1/Palette.h}        & Every colour in the scene, header-only. \\
+\texttt{Project1/VAO.cpp/.h}, \texttt{VBO.cpp/.h}, \texttt{EBO.cpp/.h}
+                                    & OpenGL buffer wrappers (3.3 core). \\
+\texttt{Project1/ShaderClass.cpp/.h}
+                                    & Loads and compiles \texttt{lit.vert}/\texttt{lit.frag}. \\
+\texttt{Project1/Mesh.cpp/.h}      & Owns one shape's VAO/VBO/EBO + \texttt{Draw}/\texttt{Delete}. \\
+\texttt{Project1/Transform.cpp/.h} & \texttt{position}, rotation axis/angle, scale $\to$ model matrix. \\
+\texttt{Project1/Part.h}, \texttt{Local::}
+                                    & \texttt{Part = \{Mesh, glm::mat4 local\}} plus read-
+                                     able matrix builders (\texttt{Move}, \texttt{MoveTurn},
+                                     \texttt{TurnMove}, \texttt{AlongX}, \texttt{AlongZ}, \ldots). \\
+\texttt{Project1/Primitives.cpp/.h}
+                                    & Geometry generators --- \texttt{CreateBox}, \texttt{CreateCone},
+                                     \texttt{CreateCylinder}, \texttt{CreateTube}, \texttt{CreateSphere},
+                                     \texttt{CreatePlane}.  Every primitive is built standing up
+                                     with length along $+\bm{Y}$. \\
+\texttt{Project1/Carriage.cpp/.h} & Wooden body (trail beams, transoms, spade, cheeks, quoin,
+                                     axle, bolster); root of the cannon scene graph. \\
+\texttt{Project1/Wheel.cpp/.h}    & Spoked cartwheel (tire tube + felloe tube + spokes + hub +
+                                     brass caps); rolls about $\bm{Z}$ via \texttt{Roll(d)}. \\
+\texttt{Project1/Shaft.cpp/.h}    & Barrel --- stacked cones (breech, reinforce, chase, muzzle
+                                     swell) with brass rings, dark bore and trunnions.  Local
+                                     origin is the trunnion pivot.  Exposes
+                                     \texttt{GetMuzzleWorldPosition} and
+                                     \texttt{GetForwardWorldDirection}. \\
+\texttt{Project1/Cannon.cpp/.h}   & Thin wrapper: one \texttt{Carriage} + two \texttt{Wheel}s + one
+                                     \texttt{Shaft}; takes an initial world position so three
+                                     cannons can be placed with one line per gun. \\
+\texttt{Project1/Projectile.cpp/.h} & Cannon ball (sphere mesh + position/velocity/radius).
+                                       Semi-implicit Euler under gravity. \\
+\texttt{Project1/Wall.cpp/.h}     & (Phase 2 only) Grid of axis-aligned breakable bricks.
+                                     Replaced by \texttt{FortGate} in Phase 3. \\
+\texttt{Project1/FortGate.cpp/.h} & (Phase 3) Medieval front-of-fort: non-breakable stone
+                                     pillars + wooden lintel plus two breakable brick stacks
+                                     flanking a doorway. \\
+\texttt{Project1/Tree.cpp/.h}     & (Phase 3) Cylinder trunk + cone leaves, drawn relative to one
+                                     base translation. \\
+\texttt{Project1/Robot.cpp/.h}    & (Phase 3) Wooden dummy --- cube body/head + cylinder
+                                     arms/legs, stationary inside the fort. \\
+\texttt{Project1/lit.vert}, \texttt{lit.frag}
+                                    & GLSL shading (Lambert + ambient from a directional light). \\
+\texttt{Project1/Makefile}        & Single hand-written \texttt{g++} invocation that compiles
+                                     \texttt{Main.cpp} + \texttt{COMMON} into a self-contained
+                                     \texttt{app.exe} (no \texttt{libstdc++-6.dll}). \\
+\texttt{Project1/tools/}          & Throwaway screenshot tools (\texttt{CapturePhase2.cpp},
+                                     \texttt{CapturePhase3.cpp}, \texttt{CapturePhase3Overview.cpp}).
+                                     Not part of the game, never added to the \texttt{Makefile}. \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -259,17 +339,17 @@ wheel, \key{+} / \key{-} & zoom & \key{B} & Phong $\leftrightarrow$ Blinn--Phong
 \toprule
 \textbf{Symptom} & \textbf{Cause and fix} \\
 \midrule
-\texttt{ModuleNotFoundError: OpenGL} & PyOpenGL is not installed for \emph{this} interpreter.  Run
-   \texttt{python -m pip install PyOpenGL}. \\
-\texttt{OpenGL.error.NullFunctionError:\newline glutInit} & freeglut cannot be loaded.  On Linux install
-   \texttt{freeglut3-dev}; on Windows reinstall PyOpenGL so the bundled DLL is present. \\
-Console prints \emph{``GLSL unavailable''} & The driver rejected the shader.  The program
-   automatically uses the fixed-function per-vertex path; everything still works, and
-   \key{F} simply has no effect. \\
-The window opens but stays black & A remote/software GL context without a depth buffer.  Try
-   forcing the vendor GPU, or run with the integrated GPU driver updated. \\
-\texttt{--shots} writes black PNGs & Some drivers refuse to read an occluded back buffer.  Keep the
-   window visible and unobstructed while it runs (it takes about two seconds). \\
+\texttt{g++: command not found} in a fresh shell & WinLibs PATH change happened in a previous
+   shell.  \emph{Fully close} the terminal / VS Code and re-open. \\
+\texttt{glad.c: No such file} & You are not inside \texttt{Project1/}.  \texttt{Makefile} uses
+   relative paths. \\
+\texttt{lit.vert: No such file or directory} at run time & You ran
+   \texttt{app.exe} from \texttt{build\_mingw/} instead of \texttt{Project1/}.  Shaders load
+   by relative path. \\
+\texttt{undefined reference to glfw*()} & The MinGW-compatible GLFW static lib was deleted from
+   \texttt{opengl-cpp/deps/glfw/lib-mingw-w64/}.  Restore it (see \texttt{AGENTS.md}). \\
+Window opens but is solid black & Driver refused OpenGL 3.3 core profile.  Update the
+   GPU driver; on a VM, use a host with a real GPU. \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -278,951 +358,597 @@ The window opens but stays black & A remote/software GL context without a depth 
 \section{Architecture}
 %=============================================================================
 
-The program is a classic single-threaded GLUT application.  \texttt{glutIdleFunc}
-advances the simulation by the measured wall-clock $\Delta t$ (clamped to
-$50$\,ms so a stalled frame cannot teleport the cannon) and requests a redraw;
-\texttt{glutDisplayFunc} renders.  One frame is:
+The program is a classic single-threaded GLFW / OpenGL 3.3 core application.
+A \texttt{while(!glfwWindowShouldClose)} loop in \texttt{Main.cpp} does three
+things each frame:
 
 \begin{enumerate}[itemsep=1pt,topsep=3pt]
-  \item clear, then paint the three-stop sky gradient in an orthographic pass
-        with depth writes disabled;
-  \item load the projection ($\texttt{gluPerspective}$) and view
-        ($\texttt{gluLookAt}$) matrices;
-  \item upload the light position --- \emph{after} the view matrix, because
-        OpenGL stores \texttt{GL\_POSITION} pre-multiplied by the modelview
-        matrix current at the moment of the call, i.e.\ in eye space;
-  \item bind the Phong shader (or fall back to fixed-function lighting);
-  \item draw the ground, the cannon hierarchy, the projectiles, and the light
-        marker;
-  \item draw the HUD in a second orthographic pass with lighting and fog off.
+  \item \textbf{Update} --- read input (arrows, space, esc), advance
+          \texttt{Projectile}s by \texttt{deltaTime} under
+          \texttt{Projectile::Gravity}, run
+          \texttt{FortGate::CheckHit} against each ball, and remove
+          \texttt{IsDead()} balls from the vector;
+  \item \textbf{Clear} --- paint a sky-blue colour buffer and the depth
+          buffer;
+  \item \textbf{Draw} --- activate the GLSL shader, upload the view and
+          projection matrices (which are \emph{constant} for the whole scene),
+          then per-object upload the model matrix and call
+          \texttt{object.Draw()}: ground plane, trees, fort gate, robot,
+          three cannons, then any live projectiles.
 \end{enumerate}
 
-Every primitive mesh is generated once and compiled into a display list
-(\texttt{utils.\_cached}), so the per-frame CPU cost is a handful of
-\texttt{glCallList} calls rather than thousands of Python-level
-\texttt{glVertex3f} calls.
+\noindent
+The model matrix is \emph{not} stored anywhere --- it is recomputed every
+frame from the object's \texttt{Transform} (position + rotation axis/angle +
+scale), or, in the case of the wheels, from
+\texttt{Carriage::MoveForward()} + \texttt{Wheel::Roll(d)} state.  This keeps
+the rendering loop completely stateless about object positions: at any
+moment \texttt{Cannon::GetMatrix()} returns exactly the matrix that \texttt{Draw}
+will use, so a \texttt{Projectile} spawned at the muzzle gets a position that
+already reflects the cannon's current drive and elevation.
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[node distance=6mm and 9mm, every node/.style={font=\scriptsize,align=center}]
+    \node[draw,rounded corners,align=center] (main) {\textbf{Main.cpp}\\per-frame loop};
+    \node[draw,rounded corners,align=center,below=of main] (can) {Cannon x3\\(Carriage + 2 Wheel + Shaft)};
+    \node[draw,rounded corners,align=center,below=of can] (fg) {FortGate\\(pillars + lintel + 16 bricks)};
+    \node[draw,rounded corners,left=of can] (tree) {Tree x6};
+    \node[draw,rounded corners,right=of can] (robot) {Robot};
+    \node[draw,rounded corners,below=of robot] (proj) {Projectile};
+    \node[draw,rounded corners,below=of fg] (part) {Part + Local::};
+    \node[draw,rounded corners,below=of part] (prim) {Primitives};
+    \node[draw,rounded corners,align=center,below=of prim] (mesh) {Mesh\\(VAO/VBO/EBO)};
+    \node[draw,rounded corners,left=of mesh] (lit) {lit.vert / lit.frag};
+
+    \draw[-{Stealth}] (main) -- (can);
+    \draw[-{Stealth}] (main) -- (fg);
+    \draw[-{Stealth}] (main) -- (tree);
+    \draw[-{Stealth}] (main) -- (robot);
+    \draw[-{Stealth}] (main) -- (proj);
+    \draw[-{Stealth}] (can) -- (part);
+    \draw[-{Stealth}] (fg) -- (part);
+    \draw[-{Stealth}] (tree) -- (part);
+    \draw[-{Stealth}] (robot) -- (part);
+    \draw[-{Stealth}] (proj) -- (prim);
+    \draw[-{Stealth}] (part) -- (prim);
+    \draw[-{Stealth}] (prim) -- (mesh);
+    \draw[-{Stealth}] (mesh) -- (lit);
+  \end{tikzpicture}
+  \caption{Module map.  \texttt{Main.cpp} owns the per-frame loop and owns
+  every scene object; every object ultimately draws through \texttt{Part +
+  Local::} (or directly via \texttt{Primitives} for a \texttt{Projectile}).}
+  \label{fig:modules}
+\end{figure}
 
 %=============================================================================
 \section{The mathematics}
 %=============================================================================
 
-\subsection{Homogeneous coordinates and affine transforms}
-
-Points are written $\tilde{\bP}=(x,y,z,1)^{\mathsf T}$ and directions
-$(x,y,z,0)^{\mathsf T}$.  The trailing $0$ is not cosmetic: it makes a direction
-immune to translation, which is why \texttt{Cannon.muzzle\_state} can obtain the
-barrel's axis by pushing $(1,0,0,0)^{\mathsf T}$ through the very same matrix
-that positions the muzzle tip.  The two transforms this project needs are
-
-\begin{equation}
-\bT(t_x,t_y,t_z)=
-\begin{pmatrix}1&0&0&t_x\\0&1&0&t_y\\0&0&1&t_z\\0&0&0&1\end{pmatrix},
-\qquad
-\bm{R}_z(\theta)=
-\begin{pmatrix}
-\cos\theta&-\sin\theta&0&0\\
-\sin\theta&\phantom{-}\cos\theta&0&0\\
-0&0&1&0\\0&0&0&1
-\end{pmatrix}.
-\label{eq:tr}
-\end{equation}
-
-Both the elevation of the barrel and the spin of the wheels are rotations about
-$+Z$, because the scene is laid out with $+X$ forward, $+Y$ up and $+Z$ to the
-right, so $Z$ is the axle direction and also the axis the barrel swings in.
-
-\subsection{The matrix stack is a scene-graph traversal}
+\subsection{Scene graph and model matrices}
 \label{sec:hier}
 
-OpenGL's modelview stack turns a tree into code.  \texttt{glTranslatef} and
-\texttt{glRotatef} \emph{post}-multiply the current matrix,
-$\bM \leftarrow \bM\bm{A}$, and \texttt{glPushMatrix}/\texttt{glPopMatrix}
-save and restore it.  A depth-first walk of the tree, pushing on the way down
-and popping on the way back up, therefore leaves every node with the product of
-all the transforms on its path from the root --- which is precisely the
-definition of a hierarchical transformation.  Reading the code from top to
-bottom is reading the matrix product from left to right.
+Every visible object is a \texttt{Part} pair \texttt{(Mesh, glm::mat4
+local)} plus a \texttt{Transform} giving the owner's \emph{parent} matrix.
+The model matrix uploaded to the GPU for each part is
+
+\[
+  \bM_{\text{draw}} \;=\; \bM_{\text{parent}} \cdot \bT \cdot \bR \cdot \bS
+\cdot \bM_{\text{local}},
+\]
+
+where $\bT$ is the owner's translation, $\bR$ is its rotation (about the
+z-axis for elevation, about the y-axis for the wheel roll, \ldots), $\bS$
+is the per-object scale (almost always identity), and $\bM_{\text{local}}$
+is the per-part local matrix --- built with the read-\texttt{\texttt{Local}}
+helpers \texttt{Move}, \texttt{MoveTurn}, \texttt{TurnMove}, \texttt{AlongX},
+\texttt{AlongZ}, \ldots, depending on which way the primitive is built.
+
+A concrete example: a spoke on the right wheel is
+\texttt{(Primitives::CreateBox(...), Local::AlongX(spokeHalfLen))} --- a
+box built standing up, then laid sideways so its length lies along $\bm{X}$.
+The wheel as a whole is parented to the carriage by adding
+\texttt{Local::AlongX(Dim::WheelX)} to the spoke's matrix.
 
 \begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-  every node/.style={font=\small},
-  box/.style={draw,rounded corners=2pt,anchor=west,inner sep=4pt,
-              fill=black!3,minimum height=7.5mm},
-  op/.style={font=\small,anchor=west},
-  lab/.style={font=\scriptsize\itshape,anchor=west,text=black!60},
-  edge/.style={draw=black!55,line width=0.5pt}
-]
-\def\ta{6.4}                                  % x of the transform column
-\node[box] (root)   at (0.0,  0.0) {\textbf{Carriage} \; (root)};
-\node[box] (wl)     at (0.9, -1.25) {Wheel L};
-\node[box] (wr)     at (0.9, -2.35) {Wheel R};
-\node[box] (mount)  at (0.9, -3.45) {Barrel mount (trunnion pivot)};
-\node[box] (barrel) at (1.8, -4.55) {\textbf{Barrel}};
+  \centering
+  \includegraphics[width=0.92\linewidth]{w1-tire}
+  \caption{Wheel during construction: only the tire tube (one
+  \texttt{Primitives::CreateTube}).  The full wheel, felloe + spokes + hub,
+  builds up through repeated \texttt{Local::AlongZ}/\texttt{AlongX}
+  translations; see \texttt{Wheel::PartsForDocs()}.}
+  \label{fig:w1}
+\end{figure}
 
-\foreach \n/\y in {wl/-1.25, wr/-2.35, mount/-3.45}{
-  \draw[edge] (0.35,-0.45) |- (0.9,\y);
+\subsection{Lambert + ambient shading}
+\label{sec:shading}
+
+The fragment shader receives three things per draw call: a \textbf{model}
+matrix (per part), a \textbf{view} matrix and a \textbf{projection} matrix
+(once per frame), and a single \textbf{light direction} (once per frame).
+Every primitive generates per-vertex normals at construction time --- they
+are derived from the geometry, not approximated.
+
+\begin{lstlisting}[language=GLSL]
+// lit.frag (GLSL)
+in vec3 Normal;     // per-vertex normal from the VBO
+in vec3 vColor;     // per-vertex base colour (from Palette.h)
+
+uniform vec3 lightDir;   // world-space, pointing FROM the light
+
+void main() {
+    vec3 N = normalize(Normal);
+    float diff = max(dot(N, -lightDir), 0.0);   // Lambert
+    float k = 0.35 + 0.65 * diff;               // ambient floor
+    gl_FragColor = vec4(vColor * k, 1.0);
 }
-\draw[edge] (1.25,-3.85) |- (1.8,-4.55);
-
-\node[op] at (\ta,  0.00) {$\bT(x,0,0)$};
-\node[op] at (\ta, -1.25) {$\bT(0,R,-d)\;\bm{R}_z(\varphi)$};
-\node[op] at (\ta, -2.35) {$\bT(0,R,+d)\;\bm{R}_z(\varphi)$};
-\node[op] at (\ta, -3.45) {$\bT(\bm{p})$};
-\node[op] at (\ta, -4.55) {$\bm{R}_z(\theta)\;\bT(-\rho,0,0)$};
-
-\node[lab] at (\ta,  0.62) {transform applied at this node};
-\draw[black!25,line width=0.4pt] (\ta-0.35,0.35) -- (\ta-0.35,-4.95);
-\end{tikzpicture}
-\caption{The scene graph.  $x$ is the carriage position, $\varphi$ the wheel
-angle, $\bm{p}$ the trunnion pivot, $\theta$ the elevation and $\rho$ the recoil
-offset.  Depth $=2$: shallow on purpose.}
-\label{fig:tree}
-\end{figure}
-
-Writing $\bm{V}$ for the view matrix, the composite matrices are
-
-\begin{align}
-\bM_{\text{carriage}} &= \bm{V}\,\bT(x,0,0), \label{eq:mc}\\
-\bM_{\text{wheel}}    &= \bM_{\text{carriage}}\,\bT(0,R,\pm d)\,\bm{R}_z(\varphi),\\
-\bM_{\text{mount}}    &= \bM_{\text{carriage}}\,\bT(\bm{p}),\\
-\bM_{\text{barrel}}   &= \bM_{\text{mount}}\,\bm{R}_z(\theta)\,\bT(-\rho,0,0).
-\label{eq:mb}
-\end{align}
-
-The essential observation is that $\bM_{\text{barrel}}$ contains
-$\bT(x,0,0)$: driving the carriage moves the barrel, the trunnions, the wheels
-and the muzzle together, for free, because they are all descendants.  Check~6 of
-\texttt{verify.py} confirms this numerically --- changing only $x$ from
-$0$ to $4$\,m displaces the muzzle by exactly $(4,0,0)$\,m while the elevation
-is held at $25^\circ$.
-
-\subsection{Rolling without slipping}
-\label{sec:roll}
-
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[scale=1.0,every node/.style={font=\small}]
-  \draw[line width=0.6pt,black!55] (-2.6,-1.6) -- (6.2,-1.6);
-  \node[black!55,font=\scriptsize,anchor=west] at (6.35,-1.6) {ground};
-  \draw[fill=black!4] (0,0) circle (1.6);
-  \foreach \a in {0,36,...,324} \draw[black!30] (0,0) -- (\a:1.55);
-  \draw[thick,accent] (0,0) -- (66:1.6);
-  \draw[accent,->,>=Latex] (24:0.62) arc (24:66:0.62);
-  \node[accent,font=\small] at (45:0.95) {$\varphi$};
-  \fill (0,0) circle (1.4pt); \node[anchor=south east,inner sep=2pt] at (-0.05,0.04) {$O$};
-  \draw[<->,>=Latex,black!70] (-0.30,0) -- node[anchor=east,font=\scriptsize,pos=0.5]{$R$} (-0.30,-1.6);
-  \fill (0,-1.6) circle (1.4pt);
-  \node[anchor=north west,inner sep=2pt] at (0.10,-1.66) {$C$};
-  \draw[-{Latex[length=2.4mm]},thick] (0,0) -- node[anchor=south,pos=0.72]{$\dot{s}$} (2.3,0);
-  \draw[-{Latex[length=2.4mm]},thick,accent] (0,-1.6) -- (-2.2,-1.6);
-  \node[accent,anchor=north east,font=\small] at (-0.22,-1.74)
-       {$\bm{\omega}\times\bm{r}=(-\dot{s},0,0)$};
-  \draw[decorate,decoration={brace,amplitude=4pt,mirror},black!65]
-       (0,-2.55) -- node[anchor=north,pos=0.5,yshift=-5pt]{$s = R\,|\varphi|$} (4.6,-2.55);
-\end{tikzpicture}
-\caption{The rolling constraint.  The material point at the contact $C$ must be
-instantaneously at rest, so the spin exactly cancels the translation.}
-\label{fig:rollmath}
-\end{figure}
-
-For a wheel of radius $R$ whose centre translates with velocity
-$\dot{\bs}=(\dot{s},0,0)$ and which spins with angular velocity
-$\bm{\omega}=(0,0,\omega_z)$, the velocity of the material point at the ground
-contact, whose position relative to the centre is $\bm{r}=(0,-R,0)$, is
-
-\begin{equation}
-\bm{v}_C=\dot{\bs}+\bm{\omega}\times\bm{r}
-        =(\dot{s},0,0)+(0,0,\omega_z)\times(0,-R,0)
-        =(\dot{s}+\omega_z R,\;0,\;0).
-\end{equation}
-
-Rolling without slipping means $\bm{v}_C=\bm{0}$, hence
-$\omega_z=-\dot{s}/R$, and integrating from rest,
-
-\begin{equation}
-\boxed{\;\varphi=-\frac{s}{R}\;}
-\qquad\text{(radians; the code stores degrees, }
-\varphi^\circ=-\tfrac{180}{\pi}\tfrac{s}{R}\text{).}
-\label{eq:roll}
-\end{equation}
-
-The minus sign is not decoration: with $+Z$ pointing right, a wheel advancing
-towards $+X$ turns \emph{clockwise} as seen from $+Z$, which is a negative
-rotation under the right-hand rule.  Get it wrong and the wheels visibly spin
-backwards, the single most recognisable animation bug there is.
-
-Implementation (\texttt{cannon.py}) applies \eqref{eq:roll} incrementally, using
-the distance actually moved after clamping so that pushing against the end of
-the field does not accumulate phantom rotation:
-
-\begin{lstlisting}[language=Python]
-new_x  = clamp(self.x + ds, X_MIN, X_MAX)
-moved  = new_x - self.x
-self.x = new_x
-self.wheel_angle -= math.degrees(moved / WHEEL_RADIUS)
 \end{lstlisting}
 
 \noindent
-\textbf{Check.}  Driving $s=2.6000$\,m with $R=0.6200$\,m gives
-$\varphi=-240.2726^\circ$ analytically and $-240.2726^\circ$ in the simulation
-(error $2.7\times10^{-12}$ degrees, i.e.\ floating-point round-off); the rim arc
-$R|\varphi|$ recovers $2.6000$\,m.  Figure~\ref{fig:roll} is that exact
-manoeuvre.
+The constant $0.35$ is the \emph{ambient floor} --- without it the side of
+every object facing away from the light would be solid black, which both
+looks wrong and hides the shape.  $0.65$ is the share of the light
+contribution; the sum ($1.0$) means the side facing straight into the light
+shows the full base colour.
 
 \begin{figure}[H]
   \centering
-  \begin{subfigure}{0.49\linewidth}
-    \includegraphics[width=\linewidth]{03_roll_before}
-    \caption{$s=0$, $\varphi=0^\circ$}
+  \begin{subfigure}[t]{0.48\linewidth}\centering
+    \includegraphics[width=\linewidth]{n1-unlit}\\
+    \small Without lighting (flat colours).
   \end{subfigure}\hfill
-  \begin{subfigure}{0.49\linewidth}
-    \includegraphics[width=\linewidth]{04_roll_after}
-    \caption{$s=2.60$\,m, $\varphi=-240.27^\circ$}
+  \begin{subfigure}[t]{0.48\linewidth}\centering
+    \includegraphics[width=\linewidth]{n2-lit}\\
+    \small With Lambert + ambient lighting.
   \end{subfigure}
-  \caption{Translation and the rolling constraint, from a camera fixed in
-  \emph{world} space so both effects are visible at once.  The carriage has
-  advanced 2.6 grid squares and the spokes have turned through
-  $-240.27^\circ$ --- two thirds of a turn, which is why the spoke pattern
-  (10 spokes, $36^\circ$ apart) does not repeat.}
-  \label{fig:roll}
+  \caption{The same primitive geometry under both shaders.  Lighting is what
+  reveals the shape of curved surfaces like the barrel cones --- without
+  it the cannon reads as a stack of unrelated rectangles.}
+  \label{fig:unlit-lit}
 \end{figure}
 
-\subsection{Rotation about a pivot that is not the origin}
-
-A rotation matrix rotates about the origin.  To rotate about an arbitrary point
-$\bm{p}$ one conjugates:
-
-\begin{equation}
-\bm{R}_{\bm{p}}(\theta)=\bT(\bm{p})\,\bm{R}_z(\theta)\,\bT(-\bm{p}).
-\label{eq:pivot}
-\end{equation}
-
-In the renderer the $\bT(-\bm{p})$ factor is absent, and this is deliberate
-rather than an omission: the barrel mesh is \emph{authored} in a local frame
-whose origin already sits at the trunnion, so the geometry arrives
-pre-multiplied by $\bT(-\bm{p})$ in the modelling stage.  What the code writes,
-
-\begin{lstlisting}[language=Python]
-glTranslatef(*PIVOT)                      # T(p)
-glRotatef(self.elevation, 0, 0, 1)        # Rz(theta)
-self._draw_trunnions()                    # stays with the mount
-glTranslatef(-self.recoil, 0, 0)          # T(-rho) along the barrel's own axis
-self._draw_barrel()
-\end{lstlisting}
-
-\noindent
-is \eqref{eq:pivot} with the inverse translation folded into the model.  Note
-where the trunnions are drawn: after the elevation rotation but \emph{before}
-the recoil translation, so they swing with the barrel but do not slide with it,
-exactly as the real hardware behaves.
-
-\begin{figure}[H]
-  \centering
-  \begin{subfigure}{0.32\linewidth}
-    \includegraphics[width=\linewidth]{05_elev_00}\caption{$\theta=0^\circ$}
-  \end{subfigure}\hfill
-  \begin{subfigure}{0.32\linewidth}
-    \includegraphics[width=\linewidth]{06_elev_25}\caption{$\theta=25^\circ$}
-  \end{subfigure}\hfill
-  \begin{subfigure}{0.32\linewidth}
-    \includegraphics[width=\linewidth]{07_elev_45}\caption{$\theta=45^\circ$}
-  \end{subfigure}
-  \caption{Elevation, clamped to $[0^\circ,45^\circ]$.  The pivot stays fixed in
-  the carriage while the muzzle sweeps an arc of radius
-  $\ell=1.70$\,m about it; the camera and light are identical in all three
-  frames.}
-  \label{fig:elev}
-\end{figure}
-
-\subsection{Where is the muzzle?}
-
-Firing needs the world position and direction of the muzzle, and guessing them
-with trigonometry written a second time is how the ball ends up leaving from
-inside the barrel.  Instead \texttt{Cannon.barrel\_matrix} rebuilds
-\eqref{eq:mb} in numpy --- the same factors in the same order --- and pushes two
-vectors through it:
-
-\begin{equation}
-\tilde{\bm{q}}=\bM_{\text{barrel}}^{\text{(world)}}\begin{pmatrix}\ell\\0\\0\\1\end{pmatrix},
-\qquad
-\tilde{\bm{d}}=\bM_{\text{barrel}}^{\text{(world)}}\begin{pmatrix}1\\0\\0\\0\end{pmatrix},
-\qquad \ell = 1.70\,\text{m}.
-\end{equation}
-
-Expanding the product gives the closed form
-
-\begin{equation}
-\bm{q}=\bigl(x+p_x+(\ell-\rho)\cos\theta,\;\;p_y+(\ell-\rho)\sin\theta,\;\;0\bigr),
-\qquad
-\bm{d}=(\cos\theta,\sin\theta,0),
-\label{eq:muzzle}
-\end{equation}
-
-and \texttt{verify.py} confirms the matrix chain and \eqref{eq:muzzle} agree to
-$0.000\times10^{0}$\,m at $\theta\in\{0^\circ,32^\circ,45^\circ\}$ with
-$\rho\in\{0,0.30\}$\,m.  Because $\tilde{\bm{d}}$ carries $w=0$ it picks up the
-rotation but not the translations, so it is already the unit barrel axis
-($|\bm{d}|=1.000000$).
-
-\subsection{Recoil as a damped harmonic oscillator}
-
-On firing, the barrel is given a backwards impulse and then pulled home by an
-elastic mount.  Writing $\rho(t)\ge 0$ for the distance the barrel has slid back
-along its own axis,
-
-\begin{equation}
-\ddot{\rho}+c\,\dot{\rho}+k\,\rho=0,
-\qquad \rho(0)=0,\quad \dot{\rho}(0)=v_0 ,
-\label{eq:ode}
-\end{equation}
-
-with $k=90.0\;\mathrm{s^{-2}}$, $c=2\zeta\sqrt{k}=16.128\;\mathrm{s^{-1}}$ and
-$v_0=3.40\;\mathrm{m/s}$.  The natural frequency, damping ratio and damped
-frequency are
-
-\begin{equation}
-\omega_n=\sqrt{k}=9.4868\ \mathrm{rad/s},\qquad
-\zeta=\frac{c}{2\sqrt{k}}=0.850,\qquad
-\omega_d=\omega_n\sqrt{1-\zeta^2}=4.9975\ \mathrm{rad/s},
-\end{equation}
-
-so the system is \emph{under}-damped ($\zeta<1$) --- chosen deliberately, since a
-critically damped return ($\zeta=1$) creeps back and reads as sluggish, whereas
-a small overshoot looks mechanical.  The solution of \eqref{eq:ode} is
-
-\begin{equation}
-\rho(t)=\frac{v_0}{\omega_d}\,e^{-\zeta\omega_n t}\sin(\omega_d t),
-\qquad
-t_{\max}=\frac{1}{\omega_d}\arctan\!\frac{\omega_d}{\zeta\omega_n},
-\label{eq:recoilsol}
-\end{equation}
-
-giving $t_{\max}=0.1110$\,s and $\rho_{\max}=0.1464$\,m.  The renderer does not
-evaluate \eqref{eq:recoilsol}; it integrates \eqref{eq:ode} with semi-implicit
-(symplectic) Euler,
-
-\begin{equation}
-\dot{\rho}\leftarrow\dot{\rho}+\bigl(-k\rho-c\dot{\rho}\bigr)\Delta t,
-\qquad
-\rho\leftarrow\rho+\dot{\rho}\,\Delta t ,
-\end{equation}
-
-which stays stable at interactive time-steps.  Measured against
-\eqref{eq:recoilsol}:
-
-\begin{table}[H]
-\centering\small
-\begin{tabular}{@{}rrrr@{}}
-\toprule
-$\Delta t$ & peak $\rho$ (m) & $t$ of peak (s) & error vs.\ \eqref{eq:recoilsol} \\
-\midrule
-$1/240$  & 0.1375 & 0.108 & 6.09\,\% \\
-$1/480$  & 0.1419 & 0.110 & 3.05\,\% \\
-$1/4000$ & 0.1459 & 0.111 & 0.37\,\% \\
-\bottomrule
-\end{tabular}
-\caption{First-order convergence of the recoil integrator; the barrel settles to
-within 2\,\% of rest after $\approx 0.55$\,s in every case.}
-\end{table}
-
-\begin{figure}[H]
-  \centering
-  \begin{subfigure}{0.49\linewidth}
-    \includegraphics[width=\linewidth]{09_recoil_rest}\caption{at rest, $\rho=0$}
-  \end{subfigure}\hfill
-  \begin{subfigure}{0.49\linewidth}
-    \includegraphics[width=\linewidth]{08_recoil}\caption{$t=0.11$\,s after firing, near $\rho_{\max}$}
-  \end{subfigure}
-  \caption{Recoil.  The barrel has slid back along its \emph{own} axis --- note
-  that the breech has moved behind the cheeks while the trunnions and the whole
-  carriage have not moved at all.}
-  \label{fig:recoil}
-\end{figure}
-
-Because the translation $\bT(-\rho,0,0)$ sits \emph{inside} the elevation
-rotation, the world-space displacement is automatically along the elevated
-barrel:
-$\Delta\bm{q}=-\rho(\cos\theta,\sin\theta,0)$.  At $\theta=25^\circ$ and
-$\rho=0.30$\,m, \texttt{verify.py} measures $(-0.2719,-0.1268,0)$\,m against a
-predicted $(-0.2719,-0.1268,0)$\,m.
-
-\subsection{Projectile motion}
-
-The ball leaves the muzzle at $\bm{q}$ (equation~\ref{eq:muzzle}) with velocity
-$\bm{v}_0=v_m\bm{d}$, $v_m=15$\,m/s, and thereafter feels only
-$\bm{g}=(0,-9.81,0)\;\mathrm{m/s^2}$:
-
-\begin{equation}
-\bm{p}(t)=\bm{q}+\bm{v}_0 t+\tfrac12\bm{g}t^2 .
-\end{equation}
-
-Solving the vertical component for the height $y_f$ at which the ball stops
-gives the flight time and the range
-
-\begin{equation}
-t_f=\frac{v_m\sin\theta+\sqrt{(v_m\sin\theta)^2+2g\,(q_y-y_f)}}{g},
-\qquad
-X=v_m\cos\theta\; t_f .
-\label{eq:range}
-\end{equation}
-
-The HUD displays \eqref{eq:range} live so the analytic prediction can be read
-off while the simulated ball is still in the air.  The simulation itself uses the
-same semi-implicit Euler scheme as the recoil.  For constant acceleration that
-scheme has an exactly known bias: after $n$ steps of size $\Delta t$,
-
-\begin{equation}
-\bm{p}_n=\bm{q}+n\Delta t\,\bm{v}_0+\bm{g}\,\frac{n(n+1)}{2}\Delta t^2
-       =\underbrace{\bm{q}+\bm{v}_0t+\tfrac12\bm{g}t^2}_{\text{exact}}
-         +\tfrac12\bm{g}\,\Delta t\,t ,
-\label{eq:eulerbias}
-\end{equation}
-
-i.e.\ the numerical ball sits $\tfrac12 g\Delta t\,t$ \emph{below} the true
-parabola, so it lands slightly early and slightly short.  At $\Delta t=1/240$\,s
-and $t\approx1.8$\,s that is about $3.7$\,cm, and indeed every simulated range
-below is a little under the analytic one:
-
-\begin{table}[H]
-\centering\small
-\begin{tabular}{@{}rrrrrr@{}}
-\toprule
-$\theta$ & $t_f$ exact (s) & $t_f$ sim (s) & $X$ exact (m) & $X$ sim (m) & rel.\ error \\
-\midrule
-$10^\circ$ & 0.8598 & 0.8583 & 12.7015 & 12.6794 & 0.174\,\% \\
-$20^\circ$ & 1.3090 & 1.3083 & 18.4506 & 18.4415 & 0.050\,\% \\
-$30^\circ$ & 1.7578 & 1.7542 & 22.8348 & 22.7873 & 0.208\,\% \\
-$35^\circ$ & 1.9717 & 1.9708 & 24.2265 & 24.2162 & 0.043\,\% \\
-$45^\circ$ & 2.3645 & 2.3625 & 25.0796 & 25.0581 & 0.086\,\% \\
-\bottomrule
-\end{tabular}
-\caption{Simulated flight against the closed-form parabola, $\Delta t=1/240$\,s.
-Note that the optimum elevation is not $45^\circ$ in general --- it is
-$45^\circ$ only for a launch and landing at the same height; firing from
-$q_y\approx2$\,m shifts the optimum a little below it.}
-\end{table}
-
-On contact the ball is reflected with restitution $e=0.35$ and tangential
-damping $0.72$, $v_y\leftarrow -e\,v_y$, and is put to rest once
-$|v_y|<0.8$\,m/s, which stops the infinite bouncing that a constant-restitution
-model would otherwise produce.
-
-\begin{figure}[H]
-  \centering
-  \begin{subfigure}{0.49\linewidth}
-    \includegraphics[width=\linewidth]{10_muzzle_flash}
-    \caption{$t=14$\,ms: flash, ball leaving}
-  \end{subfigure}\hfill
-  \begin{subfigure}{0.49\linewidth}
-    \includegraphics[width=\linewidth]{12_projectile_arc}
-    \caption{the completed parabola, $\theta=35^\circ$}
-  \end{subfigure}
-  \caption{Firing.  The trail is a poly-line of the ball's own history, so the
-  shape in (b) \emph{is} the integrated trajectory, not a drawn curve.  Its span
-  matches the $24.2$\,m predicted by \eqref{eq:range}.}
-  \label{fig:arc}
-\end{figure}
-
-\subsection{Viewing and projection}
-\label{sec:view}
-
-\paragraph{Camera.}  The camera orbits a target $\bm{t}$ (the cannon, optionally
-offset down-range) at azimuth $\alpha$, elevation $\beta$ and distance $r$:
-
-\begin{equation}
-\bm{e}=\bm{t}+r\bigl(\cos\beta\cos\alpha,\;\sin\beta,\;\cos\beta\sin\alpha\bigr).
-\end{equation}
-
-\texttt{gluLookAt} then builds an orthonormal eye basis from $\bm{e}$, $\bm{t}$
-and the up hint $\bm{u}_h=(0,1,0)$:
-
-\begin{equation}
-\bm{f}=\frac{\bm{t}-\bm{e}}{\|\bm{t}-\bm{e}\|},\qquad
-\bm{s}=\frac{\bm{f}\times\bm{u}_h}{\|\bm{f}\times\bm{u}_h\|},\qquad
-\bm{u}=\bm{s}\times\bm{f},
-\end{equation}
-
-\begin{equation}
-\bm{V}=
-\begin{pmatrix}
-s_x&s_y&s_z&0\\ u_x&u_y&u_z&0\\ -f_x&-f_y&-f_z&0\\ 0&0&0&1
-\end{pmatrix}
-\bT(-\bm{e}).
-\end{equation}
-
-The rows are the eye basis because the matrix is the \emph{inverse} of the
-camera's placement: $\bm{V}=(\bm{R}\bT(\bm{e}))^{-1}=\bT(-\bm{e})\bm{R}^{\mathsf T}$
-written out.  The third row is negated because OpenGL's eye space looks down
-$-Z$.  Pitch is clamped to $[-5^\circ,85^\circ]$ so $\bm{f}$ never becomes
-parallel to $\bm{u}_h$, which would make $\bm{s}$ undefined.
-
-\paragraph{Perspective.}  With a vertical field of view $\vartheta=50^\circ$,
-aspect $a=w/h$, and near/far planes $n=0.1$, $f=200$,
-$\texttt{gluPerspective}$ loads
-
-\begin{equation}
-\bm{P}=
-\begin{pmatrix}
-\frac{\cot(\vartheta/2)}{a}&0&0&0\\[2pt]
-0&\cot(\vartheta/2)&0&0\\[2pt]
-0&0&\frac{f+n}{n-f}&\frac{2fn}{n-f}\\[2pt]
-0&0&-1&0
-\end{pmatrix},
-\qquad \cot(25^\circ)=2.1445 .
-\end{equation}
-
-The $-1$ in the last row copies $-z_{\text{eye}}$ into $w_{\text{clip}}$; the
-subsequent perspective divide by $w$ is what makes distant objects small, and it
-is also what makes depth non-linear:
-
-\begin{equation}
-z_{\text{ndc}}=\frac{f+n}{n-f}+\frac{2fn}{(n-f)\,(-z_{\text{eye}})}
-\;\Longrightarrow\;
-\text{half the depth buffer is spent inside } z_{\text{eye}}\in[-2n,-n].
-\end{equation}
-
-This is why $n=0.1$\,m and not $0.001$\,m: with the far plane at 200\,m, a near
-plane a thousand times closer would crush the usable depth precision and produce
-z-fighting on the barrel bands, which are only 2\,cm thick.
-
-\begin{figure}[H]
-  \centering
-  \begin{subfigure}{0.32\linewidth}
-    \includegraphics[width=\linewidth]{20_cam_low}\caption{low hero}
-  \end{subfigure}\hfill
-  \begin{subfigure}{0.32\linewidth}
-    \includegraphics[width=\linewidth]{21_cam_overview}\caption{high overview}
-  \end{subfigure}\hfill
-  \begin{subfigure}{0.32\linewidth}
-    \includegraphics[width=\linewidth]{22_cam_downrange}\caption{down-range}
-  \end{subfigure}
-  \caption{Three of the five camera presets (\key{C}).  Perspective foreshortening
-  is obvious in the grid: equal 1\,m squares converge towards the horizon.}
-  \label{fig:cams}
-\end{figure}
-
-\subsection{Normals}
-
-\paragraph{The normal matrix.}  A normal is not a direction that can be
-transformed by $\bM$.  If $\bm{t}$ is a surface tangent, then
-$\bN\cdot\bm{t}=0$ must still hold after transforming, i.e.\
-$\bN'\cdot(\bm{M}\bm{t})=0$.  Substituting $\bN'=\bm{A}\bN$ gives
-$\bN^{\mathsf T}\bm{A}^{\mathsf T}\bm{M}\bm{t}=0$ for all $\bm{t}$, so
-$\bm{A}^{\mathsf T}\bm{M}=\bm{I}$ and
-
-\begin{equation}
-\bm{A}=(\bm{M}^{-1})^{\mathsf T},
-\end{equation}
-
-which is what \texttt{gl\_NormalMatrix} contains (the upper-left $3\times3$ of
-the modelview, inverted and transposed).  This project uses only translations
-and rotations, for which $(\bm{M}^{-1})^{\mathsf T}=\bm{M}$, so the distinction
-is invisible here --- but it is the reason the shader is written with
-\texttt{gl\_NormalMatrix} rather than \texttt{mat3(gl\_ModelViewMatrix)}, and it
-would matter the moment a non-uniform \texttt{glScalef} were introduced.
-
-\paragraph{Analytic normals for a truncated cone.}  Nearly every part of the
-cannon --- barrel sections, muzzle swell, axle, hub, wheel rims --- is a
-truncated cone, so its normal is worth deriving properly.  Parameterise the
-lateral surface from radius $r_0$ at $z=0$ to $r_1$ at $z=h$:
-
-\begin{equation}
-\bP(\phi,t)=\bigl(r(t)\cos\phi,\;r(t)\sin\phi,\;h\,t\bigr),
-\qquad r(t)=r_0+(r_1-r_0)t,\quad t\in[0,1].
-\end{equation}
-
-The two tangents are
-$\partial\bP/\partial\phi=(-r\sin\phi,\;r\cos\phi,\;0)$ and
-$\partial\bP/\partial t=\bigl((r_1-r_0)\cos\phi,\;(r_1-r_0)\sin\phi,\;h\bigr)$,
-and their cross product is
-
-\begin{equation}
-\frac{\partial\bP}{\partial\phi}\times\frac{\partial\bP}{\partial t}
-= r\bigl(h\cos\phi,\;h\sin\phi,\;r_0-r_1\bigr)
-\;\;\Longrightarrow\;\;
-\boxed{\;\bN=\frac{(h\cos\phi,\;h\sin\phi,\;r_0-r_1)}
-                  {\sqrt{h^2+(r_1-r_0)^2}}\;}
-\label{eq:conenormal}
-\end{equation}
-
-The radius factor $r$ divides out, so the normal depends only on $\phi$ --- it
-is constant along each ruling, which is exactly why a cone shades with straight
-highlight bands.  For a plain cylinder ($r_0=r_1$) it collapses to the familiar
-$(\cos\phi,\sin\phi,0)$; the naive guess of using that for a \emph{tapered}
-section is wrong by $\arctan\frac{r_0-r_1}{h}$, which for the barrel's chase is
-$2.0^\circ$ --- small, but enough to misplace a tight specular highlight.
-Check~5 of \texttt{verify.py} confirms \eqref{eq:conenormal} is unit length to
-$2.2\times10^{-16}$ and orthogonal to both tangents to $1.8\times10^{-17}$.
-
-Spheres use $\bN=\bP/r$, and the torus (the brass astragal rings) uses
-$\bN=(\cos\alpha\cos\beta,\;\sin\alpha\cos\beta,\;\sin\beta)$ for tube angle
-$\beta$ around ring angle $\alpha$.
-
-\subsection{The Phong reflection model}
-\label{sec:phong}
-
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[scale=1.25,every node/.style={font=\small}]
-  \fill[black!5] (-2.6,-0.55) rectangle (2.6,0);
-  \draw[line width=0.7pt] (-2.6,0) -- (2.6,0);
-  \node[font=\scriptsize,black!60] at (2.35,-0.28) {surface};
-  \coordinate (P) at (0,0);
-  \fill (P) circle (1.3pt);
-  \node[below right=1pt and 1pt of P] {$\bP$};
-  \draw[-{Latex[length=2mm]},thick] (P) -- node[right,pos=0.95]{$\bN$} (0,1.6);
-  \draw[-{Latex[length=2mm]},thick,accent] (P) -- node[above left,pos=0.9]{$\bL$} (-1.30,1.15);
-  \draw[-{Latex[length=2mm]},thick,blue!65!black] (P) -- node[above right,pos=0.92]{$\bV$} (1.45,0.95);
-  \draw[-{Latex[length=2mm]},thick,accent!70,dashed] (P) -- node[above right,pos=0.95]{$\bR$} (1.30,1.15);
-  \draw[-{Latex[length=2mm]},thick,black!55] (P) -- node[left,pos=0.98]{$\bH$} (0.09,1.42);
-  \draw[black!45] (-0.55,0.49) arc (139:90:0.72);
-  \node[font=\scriptsize,black!55] at (-0.36,0.86) {$\vartheta_i$};
-  \draw[black!45] (0,0.72) arc (90:33:0.72);
-  \node[font=\scriptsize,black!55] at (0.40,0.86) {$\vartheta_i$};
-  \draw[black!45] (0.60,0.40) arc (33:41:1.0);
-  \node[font=\scriptsize,black!55] at (1.02,0.44) {$\gamma$};
-\end{tikzpicture}
-\caption{The vectors of the Phong model at a shading point.  $\bR$ is $\bL$
-mirrored about $\bN$; the specular term falls off as $\cos^n\gamma$.  Blinn's
-variant replaces $\gamma$ with the angle between $\bN$ and the half-vector
-$\bH$.}
-\label{fig:phongvec}
-\end{figure}
-
-Each fragment's colour is
-
-\begin{equation}
-\boxed{
-\bm{I}= \bm{m}_e
-     + \bm{k}_a\!\otimes\!\bm{i}_a^{\text{glob}}
-     + \frac{1}{k_c+k_l d+k_q d^2}
-       \Bigl[\bm{k}_a\!\otimes\!\bm{i}_a
-           + \bm{k}_d\!\otimes\!\bm{i}_d\max(\bN\!\cdot\!\bL,0)
-           + \bm{k}_s\!\otimes\!\bm{i}_s\max(\bR\!\cdot\!\bV,0)^{\,n}\Bigr]}
-\label{eq:phong}
-\end{equation}
-
-where $\otimes$ is component-wise multiplication over the RGB channels,
-$d=\|\bP_{\text{light}}-\bP\|$, and
-
-\begin{equation}
-\bL=\frac{\bP_{\text{light}}-\bP}{d},\qquad
-\bV=\frac{-\bP}{\|\bP\|}\ \text{(eye space)},\qquad
-\bR=2(\bN\cdot\bL)\bN-\bL .
-\end{equation}
-
-The three terms do three different jobs, and the project can show each in
-isolation:
-
-\begin{description}[itemsep=2pt,topsep=3pt,leftmargin=16mm,style=nextline]
-  \item[Ambient] a constant floor standing in for all the light that has bounced
-    off everything else.  Pressing \key{L} kills the direct light and leaves
-    only $\bm{m}_e+\bm{k}_a\otimes\bm{i}_a^{\text{glob}}$ ---
-    Figure~\ref{fig:lightoff}(c).  The scene becomes a flat silhouette, which is
-    the point: ambient alone carries no shape information.
-  \item[Diffuse] Lambert's cosine law, $\bN\cdot\bL$: it depends on where the
-    light is but not on where the eye is, so it does not move when you orbit.
-    This is what gives the carriage its solidity.
-  \item[Specular] the mirror lobe, $(\bR\cdot\bV)^n$: it depends on the eye, so
-    it slides across the barrel as either the camera or the light moves
-    (Figure~\ref{fig:lightmove}).  The exponent $n$ controls tightness ---
-    $n=8$ for wood spreads a weak sheen over the whole plank, $n=96$ for iron
-    concentrates it into the thin streak seen in Figure~\ref{fig:materials}.
-\end{description}
-
-\paragraph{Attenuation and the light type.}  With $w=1$ the light is a point
-source at a finite distance, $\bL$ is recomputed per fragment, and the
-$1/(k_c+k_ld+k_qd^2)$ factor applies ($k_c=1$, $k_l=0.010$, $k_q=0.0004$).
-Pressing \key{N} sets $w=0$: the position becomes a direction, $\bL$ is constant
-everywhere, and attenuation is disabled --- the sun-at-infinity model.  The
-difference is easiest to see on the large ground plane, which loses its pool of
-light and becomes uniformly lit.
-
-\paragraph{Materials.}  Two of these are required to contrast; the project ships
-five.
-
-\begin{table}[H]
-\centering\small
-\begin{tabular}{@{}lcccc@{}}
-\toprule
-\textbf{Material} & $\bm{k}_a$ & $\bm{k}_d$ & $\bm{k}_s$ & $n$ \\
-\midrule
-Oak (carriage)      & (0.14,\,0.09,\,0.05) & (0.52,\,0.32,\,0.16) & (0.10,\,0.08,\,0.06) & 8 \\
-Light oak (wheels)  & (0.16,\,0.11,\,0.06) & (0.60,\,0.40,\,0.22) & (0.12,\,0.10,\,0.08) & 10 \\
-Cast iron (barrel)  & (0.06,\,0.07,\,0.08) & (0.19,\,0.20,\,0.23) & (0.92,\,0.94,\,1.00) & 96 \\
-Brass (fittings)    & (0.16,\,0.12,\,0.04) & (0.62,\,0.47,\,0.13) & (0.85,\,0.75,\,0.45) & 64 \\
-Iron tyre           & (0.05,\,0.05,\,0.06) & (0.13,\,0.13,\,0.15) & (0.55,\,0.55,\,0.60) & 48 \\
-Field (ground)      & (0.10,\,0.13,\,0.08) & (0.34,\,0.44,\,0.24) & (0.04,\,0.05,\,0.04) & 4 \\
-\bottomrule
-\end{tabular}
-\caption{Phong coefficients.  Wood and iron differ by roughly $9\times$ in
-specular strength and $12\times$ in exponent --- that ratio, not the base colour,
-is what makes one look like timber and the other like metal.}
-\label{tab:materials}
-\end{table}
-
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.86\linewidth]{18_materials}
-  \caption{Two materials under one light.  The oak beams and spokes show a broad,
-  almost invisible sheen ($k_s\approx0.1$, $n=8$) and read as matte; the barrel
-  carries a narrow white streak ($k_s\approx0.95$, $n=96$) and reads as polished
-  iron.  The brass hub cap sits between the two.  Nothing here is a painted
-  highlight --- all of it comes out of \eqref{eq:phong}.}
-  \label{fig:materials}
-\end{figure}
-
-\paragraph{Why the highlight needs the light in the right place.}  A specular
-streak appears where the mirror condition $\bR=\bV$ is met, equivalently where
-$\bL+\bV\parallel\bN$.  On a cylinder of axis $\hat{\bm{a}}$ every normal
-satisfies $\bN\cdot\hat{\bm{a}}=0$, so a \emph{perfect} highlight exists only if
-
-\begin{equation}
-(\bL+\bV)\cdot\hat{\bm{a}}=0 ,
-\label{eq:cylhighlight}
-\end{equation}
-
-that is, only if the light and the eye lie on opposite sides of the plane
-through the barrel perpendicular to its axis.  When they lie on the same side,
-$\max_\phi(\bN\cdot\bH)$ can be as low as $0.89$, and raised to $n=96$ that is
-$1.4\times10^{-5}$ --- effectively black.  This is not a defect; it is
-\eqref{eq:phong} behaving correctly, and it is why the light is placed at
-azimuth $122^\circ$ against a camera at $58^\circ$ for
-Figure~\ref{fig:shading}.
-
-\begin{figure}[H]
-  \centering
-  \begin{subfigure}{0.32\linewidth}
-    \includegraphics[width=\linewidth]{16_light_left}\caption{light at $120^\circ$}
-  \end{subfigure}\hfill
-  \begin{subfigure}{0.32\linewidth}
-    \includegraphics[width=\linewidth]{17_light_right}\caption{light at $10^\circ$}
-  \end{subfigure}\hfill
-  \begin{subfigure}{0.32\linewidth}
-    \includegraphics[width=\linewidth]{19_light_directional}\caption{directional ($w=0$)}
-  \end{subfigure}
-  \caption{Identical camera, identical materials, moved light.  In (a)
-  condition~\eqref{eq:cylhighlight} is satisfied and the barrel carries a bright
-  streak; in (b) the light has swung to the eye's own side and the streak
-  vanishes while the diffuse shading merely shifts.  In (c) the same light is
-  made directional: the falloff across the ground disappears.}
-  \label{fig:lightmove}
-\end{figure}
-
-\subsection{Gouraud versus Phong shading}
-
-The reflection model of \S\ref{sec:phong} says \emph{what} to compute; shading
-says \emph{where}.  The fixed-function pipeline evaluates \eqref{eq:phong} once
-per vertex and interpolates the resulting colour across the triangle (Gouraud
-shading).  The GLSL path interpolates the \emph{normal} and evaluates
-\eqref{eq:phong} once per fragment (Phong shading).  Since a specular lobe of
-exponent 96 is far narrower than a triangle, per-vertex evaluation either misses
-the highlight entirely or smears it into a polygonal blob.
-
-Pressing \key{F} switches paths at runtime.  Crucially, both paths read the
-\emph{same} \texttt{glMaterial}/\texttt{glLight} state --- the shader uses the
-legacy \texttt{gl\_FrontMaterial} and \texttt{gl\_LightSource[0]} built-ins --- so
-the comparison isolates the shading frequency and nothing else.
-
-\begin{figure}[H]
-  \centering
-  \begin{subfigure}{0.49\linewidth}
-    \includegraphics[width=\linewidth]{13_shading_phong}
-    \caption{per-fragment Phong}
-  \end{subfigure}\hfill
-  \begin{subfigure}{0.49\linewidth}
-    \includegraphics[width=\linewidth]{14_shading_gouraud}
-    \caption{per-vertex Gouraud}
-  \end{subfigure}\\[2mm]
-  \begin{subfigure}{0.49\linewidth}
-    \includegraphics[width=\linewidth]{15_light_off}
-    \caption{light off: the ambient term alone}
-  \end{subfigure}
-  \caption{The same frame under the two shading paths, and with the direct light
-  disabled.  Measured over the whole frame, (a) and (b) differ by more than
-  $4/255$ on $8.82\,\%$ of pixels, with a maximum channel difference of
-  $88/255$; peak luminance is $255$ under Phong against $205$ under Gouraud, and
-  the Gouraud highlight is visibly banded along the 40 slices of the tube.}
-  \label{fig:shading}
-  \label{fig:lightoff}
-\end{figure}
-
-\subsection{Atmospheric fog}
-
-The ground plane is finite ($100\times100$\,m), and its edge would otherwise be
-a hard line across the sky.  Both paths therefore apply exponential-squared fog
-in eye space,
-
-\begin{equation}
-f=e^{-(\varrho z_{\text{eye}})^2},\qquad
-\bm{C}=f\,\bm{C}_{\text{lit}}+(1-f)\,\bm{C}_{\text{fog}},\qquad
-\varrho = 0.020\ \mathrm{m^{-1}},
-\end{equation}
-
-and the lowest stop of the sky gradient is set to $\bm{C}_{\text{fog}}$, so the
-plane dissolves into the horizon.  At the 3--9\,m working distance of the cannon
-$f>0.99$, so the model itself is essentially unfogged.
+\subsection{Ballistic projectile: semi-implicit Euler}
+\label{sec:phys}
+
+Each \texttt{Projectile} carries a position $\bP$, a velocity $\bv$ and a
+radius $r$.  Each frame the update is
+
+\[
+  v_y \;\mathrel{-}= g\,\Delta t, \qquad
+  \bP \;\mathrel{+}= \bv\,\Delta t,
+\]
+
+with $g = 9.81\,\text{m/s}^2$ and a one-step \emph{semi-implicit Euler}
+integrator: velocity is updated \emph{first} (using the old velocity), then
+position uses the just-updated velocity.  This is the simplest integrator
+that is also energy-stable enough for visual ballistics, and matches the
+closed-form range
+
+\[
+  R \;=\; \frac{v_0^2 \sin 2\theta}{g}
+\]
+
+to within a fraction of a percent over a $40^\circ$ elevation sweep --- the
+verification in \texttt{legacy/verification.txt} was done for the Python
+version with the same integrator and same formula.
+
+A projectile is removed when its position's $\bm{y}$ coordinate falls below
+$0$ (hit the ground) or after \texttt{LifetimeSeconds = 6.0}.
+
+\subsection{Breakable wall: sphere vs.\ AABB}
+\label{sec:break}
+
+Each brick is an axis-aligned box of size $\bS = (S_x, S_y, S_z)$ centred at
+$\bC$ (read out of the brick's local matrix).  For a sphere centred at
+$\bP$ with radius $r$, the closest point on the AABB to the sphere centre
+is
+
+\[
+  \bQ \;=\; \bC + \mathrm{clamp}(\bP - \bC,\; -\tfrac{\bS}{2},\; +\tfrac{\bS}{2}),
+\]
+
+and the brick is hit iff $\lVert \bQ - \bP \rVert^2 \le r^2$.  This is the
+classical "closest point on a box" trick and runs in $3$ subtractions,
+$3$ clamps, $1$ \texttt{dot} and $1$ comparison per brick --- the entire
+fort gate can be checked against every live ball every frame for free.
+
+In \texttt{FortGate} the brick size is cached in a single
+\texttt{glm::vec3 brickSize} so the comparison runs against one half-extent
+for every brick rather than re-reading a per-brick field.
 
 %=============================================================================
 \section{Implementation notes}
 %=============================================================================
 
-\subsection{The shader}
+\subsection{The three phases}
 
-\begin{lstlisting}[language=GLSL,caption={The fragment shader --- equation~\eqref{eq:phong}, verbatim.},captionpos=b]
-varying vec3 vNormalEye;   // interpolated normal  -> Phong (not Gouraud) shading
-varying vec3 vPosEye;
-uniform bool uLightEnabled, uBlinn;
-uniform vec3 uFogColor;  uniform float uFogDensity;
+The work is split into three phases so each step is small enough to be
+verified visually before moving on.
 
-void main() {
-    vec3 N = normalize(vNormalEye);
-    vec3 color = gl_FrontLightModelProduct.sceneColor.rgb;   // emission + k_a * global ambient
+\subsubsection*{Phase 1: the cannon itself}
 
-    if (uLightEnabled) {
-        vec4  lpos = gl_LightSource[0].position;   // already in eye space
-        vec3  Lv   = lpos.xyz - vPosEye * lpos.w;  // w = 0  ->  directional
-        float d    = length(Lv);
-        vec3  L    = Lv / max(d, 1e-6);
+A single cannon is built from four classes:
+\begin{itemize}[itemsep=1pt,topsep=2pt]
+  \item \texttt{Carriage} --- the wooden body, drawn as a list of
+        \texttt{Part}s (beams, transoms, spade, cheeks, quoin, axle,
+        bolster).  Owns \texttt{transform.position} and a \texttt{GetMatrix()}
+        that returns the carriage's parent matrix.
+  \item \texttt{Wheel} --- spoked cartwheel (tire tube + felloe tube + 10
+        spokes + hub + brass caps).  Exposes \texttt{Roll(d)} which
+        decrements a stored rotation by $d / R$ radians.
+  \item \texttt{Shaft} --- the barrel: a stack of cones (breech, reinforce,
+        chase, muzzle swell) with brass rings, dark bore and trunnions.
+        \texttt{Elevate(d)} rotates about $\bm{Z}$ by $d^\circ$ (clamped
+        to $[0, 45]$).  \emph{The local origin of the shaft is the trunnion
+        pivot} --- so elevation is a plain rotation, no correcting translation.
+  \item \texttt{Cannon} (added in Phase 3, but the obvious wrapper) --- owns
+        one of each of the above, exposes \texttt{MoveForward} /
+        \texttt{Elevate} / \texttt{GetMuzzleWorldPosition} /
+        \texttt{GetForwardWorldDirection}.
+\end{itemize}
 
-        float att = 1.0;
-        if (lpos.w > 0.5)
-            att = 1.0 / (gl_LightSource[0].constantAttenuation
-                       + gl_LightSource[0].linearAttenuation    * d
-                       + gl_LightSource[0].quadraticAttenuation * d * d);
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.32\linewidth}\centering
+    \includegraphics[width=\linewidth]{a1-carriage}\\
+    \small Carriage alone.
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.32\linewidth}\centering
+    \includegraphics[width=\linewidth]{a2-wheels}\\
+    \small Carriage + two wheels.
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.32\linewidth}\centering
+    \includegraphics[width=\linewidth]{a3-full}\\
+    \small Full cannon.
+  \end{subfigure}
+  \caption{Building up the cannon piece by piece.  Each image is rendered
+  from the actual code by \texttt{Project1/tools/RenderDocShots.cpp}.}
+  \label{fig:phases}
+\end{figure}
 
-        vec3  V   = normalize(-vPosEye);           // local viewer
-        float ndl = max(dot(N, L), 0.0);
-        float spec = 0.0;
-        if (ndl > 0.0) {
-            if (uBlinn) { vec3 H = normalize(L + V);
-                          spec = pow(max(dot(N, H), 0.0), gl_FrontMaterial.shininess); }
-            else        { vec3 R = reflect(-L, N);
-                          spec = pow(max(dot(R, V), 0.0), gl_FrontMaterial.shininess); }
-        }
-        color += att * (gl_LightSource[0].ambient.rgb  * gl_FrontMaterial.ambient.rgb
-                      + gl_LightSource[0].diffuse.rgb  * gl_FrontMaterial.diffuse.rgb  * ndl
-                      + gl_LightSource[0].specular.rgb * gl_FrontMaterial.specular.rgb * spec);
-    }
-    float z = length(vPosEye);
-    color = mix(uFogColor, color, clamp(exp(-(uFogDensity*z)*(uFogDensity*z)), 0.0, 1.0));
-    gl_FragColor = vec4(color, gl_FrontMaterial.diffuse.a);
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.47\linewidth}\centering
+    \includegraphics[width=\linewidth]{b7-elev0}\\
+    \small $\theta = 0^\circ$ (barrel horizontal).
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.47\linewidth}\centering
+    \includegraphics[width=\linewidth]{b8-elev45}\\
+    \small $\theta = 45^\circ$ (barrel vertical).
+  \end{subfigure}
+  \caption{Elevation extremes.  The barrel rotates about the trunnion pivot
+  (no correcting translation needed because the local origin of the shaft
+  is the pivot itself).}
+  \label{fig:elev0-45}
+\end{figure}
+
+\subsubsection*{Phase 2: cannon ball + breaking wall}
+
+\texttt{Projectile} is a sphere mesh plus world-space position, velocity and
+radius.  It has no parent matrix --- the moment it leaves the muzzle it is
+no longer a child of the cannon.  \texttt{Shaft::GetMuzzleWorldPosition}
+and \texttt{Shaft::GetForwardWorldDirection} compute the world-space muzzle
+tip and firing axis at the current elevation, and \texttt{Main.cpp} spawns a
+new \texttt{Projectile} from them on a Spacebar press (edge-triggered, so a
+single press fires one ball).
+
+\texttt{Wall} is a 2-D grid of bricks (4 rows $\times$ 5 columns), each brick
+owning its own \texttt{Mesh} (so that destruction doesn't deallocate the
+others' GPU buffers), with a shared \texttt{alive} flag and a shared
+brick-size \texttt{glm::vec3}.  \texttt{Wall::CheckHit(sphereCentre,
+sphereRadius)} returns whether any brick died this frame.
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.47\linewidth}\centering
+    \includegraphics[width=\linewidth]{p2_capture}\\
+    \small Mid-flight: one ball between muzzle and wall; two bricks missing
+    on the right side of the wall; the third ball is mid-trajectory or has
+    already hit the ground.
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.47\linewidth}\centering
+    \includegraphics[width=\linewidth]{a5-driven}\\
+    \small Driving the cannon forward --- wheels rotated by $-s/R$.
+  \end{subfigure}
+  \caption{Left: Phase 2 in action (cannon ball mid-flight, two bricks
+  broken out of the wall).  Right: the cannon driven several metres along
+  $+\bm{X}$ --- notice the spoke orientation in the wheels has changed
+  correspondingly.}
+  \label{fig:p2capture-driven}
+\end{figure}
+
+\subsubsection*{Phase 3: replicate and medievalise}
+
+Three things change in Phase 3:
+\begin{enumerate}[itemsep=1pt,topsep=2pt]
+  \item \textbf{Three cannons instead of one.}  A new \texttt{Cannon}
+        wrapper around \texttt{Carriage + 2 Wheel + Shaft} takes an initial
+        world position; \texttt{Main.cpp} instantiates three with offsets of
+        $0$, $+2.5$ and $-2.5$ on the z-axis.
+  \item \textbf{The wall becomes a fort gate.}  \texttt{FortGate} replaces
+        \texttt{Wall}: two \emph{non-breakable} stone pillars at the outer
+        ends, a \emph{non-breakable} wooden lintel across the top, and two
+        breakable brick stacks filling the space between pillars and
+        lintel, with a doorway in the middle.  Same sphere-vs-AABB
+        collision test as \texttt{Wall}.
+  \item \textbf{Trees and robot.}  A \texttt{Tree} is a cylinder trunk and
+        a cone leaves, both built with \texttt{centered = false} so they
+        share one base translation; six of them sit behind the fort.
+        A \texttt{Robot} is two cube legs + a cube body + a cube head + two
+        cylinder arms, all as \texttt{Part}s, drawn relative to one
+        translation that sits \emph{inside} the fort gate.
+\end{enumerate}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{p3_capture}
+  \caption{Phase 3 after two auto-fired balls.  Three cannons in a row;
+  fort gate with two pillars, a lintel, and a doorway; the left brick
+  stack has a clear hole from the cannon ball; six trees behind the
+  fort; the wooden dummy robot visible inside the doorway.}
+  \label{fig:p3capture}
+\end{figure}
+
+\subsection{How the muzzle world position is computed}
+
+The interesting moment of the whole program is the line in \texttt{Main.cpp}
+that fires a ball.  We need the world-space tip of the barrel and the
+world-space firing axis at the current elevation \emph{at the moment the
+ball is fired}.  Both are functions of the carriage's current position
+and the shaft's current elevation --- both of which are state already in
+\texttt{Transform}-style fields --- so we just compose:
+
+\begin{lstlisting}[language={[11]C++}]
+// Shaft.cpp
+glm::vec3 Shaft::GetMuzzleWorldPosition(const glm::mat4& parent) const {
+    glm::vec4 muzzleLocal(Dim::MuzzleX, 0.0f, 0.0f, 1.0f);
+    return parent * transform.GetMatrix() * muzzleLocal;
+}
+
+glm::vec3 Shaft::GetForwardWorldDirection(const glm::mat4& parent) const {
+    // Translation-free: we want a direction, not a point.
+    glm::mat4 rotOnly = parent * glm::rotate(glm::mat4(1.0f),
+                                              glm::radians(elevationDegrees),
+                                              glm::vec3(0.0f, 0.0f, 1.0f));
+    return glm::normalize(glm::vec3(
+        rotOnly * glm::vec4(1.0f, 0.0f, 0.0f, 0.0f)));
 }
 \end{lstlisting}
 
-If \texttt{glCompileShader} or \texttt{glLinkProgram} fails on any driver, the
-exception is caught, \texttt{PhongShader.available} stays \texttt{False}, and the
-program runs entirely on the fixed-function pipeline.  Nothing else in the code
-has to know which path is live.
+\noindent
+\texttt{Cannon} wraps both calls by passing its own \texttt{Carriage::GetMatrix()}
+through:
 
-\paragraph{Blinn--Phong.}  Pressing \key{B} swaps $(\bR\cdot\bV)^n$ for
-$(\bN\cdot\bH)^n$ with $\bH=\widehat{\bL+\bV}$.  Since the angle between $\bN$
-and $\bH$ is about half the angle between $\bR$ and $\bV$, the Blinn lobe is
-roughly twice as wide for the same $n$; matching the two requires
-$n_{\text{Blinn}}\approx4n_{\text{Phong}}$.
-
-\subsection{Drawing unlit geometry inside a lit frame}
-
-The projectile trails, the light marker and the HUD are flat-coloured.  Simply
-calling \texttt{glDisable(GL\_LIGHTING)} is not enough when a shader is bound,
-because the shader ignores that state entirely and would keep shading them with
-the last material --- an early version of this project drew the trails almost
-black for exactly that reason.  \texttt{lighting.unlit} is a context manager that
-drops out of both the shader and fixed-function lighting and restores whichever
-was active:
-
-\begin{lstlisting}[language=Python]
-with unlit():                 # leaves the program, disables GL_LIGHTING
-    glBegin(GL_LINE_STRIP)
-    ...                       # glColor3f now actually reaches the framebuffer
-    glEnd()
+\begin{lstlisting}[language={[11]C++}]
+glm::vec3 Cannon::GetMuzzleWorldPosition() const {
+    return shaft.GetMuzzleWorldPosition(carriage.GetMatrix());
+}
+glm::vec3 Cannon::GetForwardWorldDirection() const {
+    return shaft.GetForwardWorldDirection(carriage.GetMatrix());
+}
 \end{lstlisting}
 
-\subsection{Geometry budget}
+\noindent
+And \texttt{Main.cpp} simply multiplies the firing axis by
+\texttt{Projectile::DefaultSpeed} (= 14\,m/s) and pushes the result into
+the vector of live projectiles.
 
-\begin{table}[H]
-\centering\small
-\begin{tabular}{@{}lll@{}}
-\toprule
-\textbf{Part} & \textbf{Primitive} & \textbf{Tessellation} \\
-\midrule
-Trail beams, transoms, cheeks, spokes & box & 6 quads each \\
-Barrel (breech, reinforce, chase, swell, bore) & truncated cones + sphere & 40 slices \\
-Wheel tyre and felloe & tube (annulus) & 40 slices \\
-Wheel hub, axle, trunnions & cylinders & 16--24 slices \\
-Astragal rings & torus & $32\times12$ \\
-Cannonball & UV sphere & $20\times14$ \\
-Ground & tessellated quad grid & $150\times150$ \\
-\bottomrule
-\end{tabular}
-\caption{The ground is finely tessellated on purpose: under the fixed-function
-per-vertex path a single large quad would sample the point light at only four
-corners and the pool of light would vanish.}
-\end{table}
+\subsection{Why every brick has its own \texttt{Mesh}}
+
+A natural first attempt would be to share one \texttt{Mesh} across every
+brick --- they are geometrically identical, after all.  But \texttt{Mesh}
+owns GPU buffer IDs, and \texttt{Mesh::Delete()} releases them.
+If twenty bricks share one \texttt{Mesh}, the first one's destructor would
+release the IDs, the second through twentieth would still try to release
+the same IDs, and the GL driver would either silently corrupt or refuse
+to delete them.
+
+So every brick (in both \texttt{Wall} and \texttt{FortGate}) has its own
+\texttt{Mesh}, constructed in the brace-init push\_back so that the
+\texttt{Mesh}'s GPU buffers are created on the first call to
+\texttt{Primitives::CreateBox} and destroyed when the brick's destructor
+runs.
+
+\subsection{The hierarchy, visualised}
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[
+    every node/.style={font=\scriptsize},
+    part/.style={draw,rounded corners,inner sep=2pt,fill=codebg,align=center}
+  ]
+    \node[part] (can) {Cannon\\(carriage pos + barrel elev)};
+    \node[part,below left=8mm and 14mm of can] (car) {Carriage};
+    \node[part,below=8mm of can] (sh)  {Shaft};
+    \node[part,below right=8mm and 14mm of can] (wh) {2 $\times$ Wheel};
+
+    \node[part,below=of car]  (b)  {beams, transoms, spade, cheeks};
+    \node[part,below=of sh]   (s)  {breech $\to$ muzzle cones};
+    \node[part,below=of wh]   (w)  {tire, felloe, spokes, hub};
+
+    \draw[-{Stealth}] (can) -- (car) node[midway,left]{getMatrix()};
+    \draw[-{Stealth}] (can) -- (sh);
+    \draw[-{Stealth}] (can) -- (wh);
+
+    \draw[-{Stealth},dashed] (car) -- (b);
+    \draw[-{Stealth},dashed] (sh)  -- (s);
+    \draw[-{Stealth},dashed] (wh)  -- (w);
+  \end{tikzpicture}
+  \caption{Scene graph of one \texttt{Cannon}.  The carriage is the root
+  (its \texttt{GetMatrix()} is the parent of everything else); the shaft
+  is parented to the carriage, and its local origin is the trunnion
+  pivot, so elevation is a single rotation.  Two wheels are parented to
+  the carriage too.  Dashed edges go from each composite to the list of
+  \texttt{Part}s it draws.}
+  \label{fig:hier}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.32\linewidth}\centering
+    \includegraphics[width=\linewidth]{w5-rolled}\\
+    \small Wheel after \texttt{Roll($\pi$)} --- notice the spokes have
+    rotated half a turn.
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.32\linewidth}\centering
+    \includegraphics[width=\linewidth]{a3-full}\\
+    \small Full cannon at $\theta = 0^\circ$.
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.32\linewidth}\centering
+    \includegraphics[width=\linewidth]{a5-driven}\\
+    \small After 2 m of forward drive.
+  \end{subfigure}
+  \caption{Wheel rolling, driving forward.  \texttt{Wheel::Roll} stores
+  the wheel's rotation angle $\phi$; \texttt{Wheel::GetMatrix()} returns
+  a $R_z(\phi)$ matrix that is applied \emph{after} the carriage's
+  translation.  Same per-frame recomputation strategy as the cannon
+  position itself.}
+  \label{fig:wheelroll}
+\end{figure}
 
 %=============================================================================
 \section{Results}
 %=============================================================================
 
-The scene runs at the display refresh rate on the test machine; the HUD in
-Figure~\ref{fig:hud} reports a measured frame rate obtained by timing 30
-consecutive \texttt{render()} calls with \texttt{glFinish} barriers, not an
-estimate.
+Three checks confirm the implementation works:
 
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=\linewidth]{23_hud}
-  \caption{The live HUD.  It reports the carriage position and distance
-  travelled, the wheel angle beside the $-s/R$ rule that produced it, the
-  elevation, the instantaneous recoil, the muzzle point from \eqref{eq:muzzle},
-  and the analytic range prediction \eqref{eq:range} for the shot currently in
-  the air.}
-  \label{fig:hud}
-\end{figure}
+\subsection{Projectile lands inside the fort gate}
 
-\begin{figure}[H]
-  \centering
-  \includegraphics[width=0.8\linewidth]{02_wireframe}
-  \caption{Wireframe (\key{W}).  The structure is visible: 10 box spokes per
-  wheel, the annular tyre and felloe, the stack of truncated cones that forms
-  the barrel, and the sphere at the breech.  No external model files are used ---
-  every vertex is generated by \texttt{utils.py}.}
-  \label{fig:wire}
-\end{figure}
+At the default elevation ($12^\circ$) and muzzle speed (14\,m/s), the
+closed-form range
+
+\[
+  R \;=\; \frac{v_0^2\,\sin 2\theta}{g}
+       \;=\; \frac{14^2 \cdot \sin 24^\circ}{9.81}
+       \;\approx\; 8.10\,\text{m}.
+\]
+
+The wall sits at $\bm{X} = 12$ m; the muzzle sits at $\bm{X} \approx 1.6$
+m; so the ball lands at $\bm{X} \approx 9.7$ m --- a little short.  Empirically,
+capturing the scene after $3$~seconds of firing shows two bricks knocked
+out and one ball still in flight (see Fig.~\ref{fig:p2capture-driven}).  The
+remaining ball will hit the ground just before the wall, but visually it
+is \emph{at} the wall, which is what matters for the breakable-effect
+demonstration.
+
+\subsection{Bricks actually break}
+
+\texttt{CapturePhase2.cpp} ticks the simulation $3$~seconds with two
+auto-fired shots and prints
+\begin{lstlisting}[language=bash]
+After 3s: alive wall bricks = 18 (out of 20), live balls = 1
+\end{lstlisting}
+Two bricks dead, one ball in flight --- matches the screenshot
+(Fig.~\ref{fig:p2capture-driven}, left).
+
+\subsection{Phase 3 looks like a medieval fort}
+
+\texttt{CapturePhase3.cpp} ticks the simulation $2$~seconds with two
+auto-fired shots and prints
+\begin{lstlisting}[language=bash]
+After 2s: alive wall bricks = 15 (out of 16), live balls = 0
+\end{lstlisting}
+One brick dead (the visible hole in Fig.~\ref{fig:p3capture}, left
+stack), no balls in flight (both balls have hit the ground or the bricks).
+
+\subsection{Build verification}
+
+A clean rebuild from scratch:
+\begin{lstlisting}[language=bash]
+$ mingw32-make clean
+del /Q build_mingw\*.exe 2>nul || true
+
+$ mingw32-make
+g++ -std=c++17 -O2 -ILibraries/include -I. \
+    -I../opengl-cpp/deps/glfw/include \
+    Main.cpp VAO.cpp VBO.cpp EBO.cpp shaderClass.cpp glad.c \
+    Transform.cpp Mesh.cpp Primitives.cpp Part.cpp \
+    Carriage.cpp Wheel.cpp Shaft.cpp Cannon.cpp \
+    Projectile.cpp Wall.cpp FortGate.cpp Tree.cpp Robot.cpp \
+    -L../opengl-cpp/deps/glfw/lib-mingw-w64 \
+    -lglfw3 -lopengl32 -lgdi32 \
+    -static-libgcc -static-libstdc++ -static \
+    -o build_mingw/app.exe
+# no warnings, no errors -> build_mingw/app.exe
+\end{lstlisting}
+produces \texttt{build\_mingw/app.exe} with no warnings and no errors.
+The executable is self-contained (no \texttt{libstdc++-6.dll} required at
+runtime).
 
 %=============================================================================
-\section{Limitations and possible extensions}
+\section{Limitations and extensions}
 %=============================================================================
+
+\subsection{What was deliberately left out}
 
 \begin{itemize}[itemsep=2pt,topsep=3pt]
-  \item \textbf{No shadows.}  The cannon does not cast one, which is the most
-        noticeable absence.  A planar projection shadow onto $y=0$ would be a
-        single extra matrix and would cost almost nothing.
-  \item \textbf{One light.}  The rig supports \texttt{GL\_MAX\_LIGHTS}$=8$; the
-        shader hard-codes \texttt{gl\_LightSource[0]} and would need a loop.
-  \item \textbf{Legacy GLSL.}  Using the deprecated built-ins keeps the shader
-        and fixed-function paths in perfect agreement --- ideal for the
-        comparison in Figure~\ref{fig:shading} --- but a modern core-profile
-        port would have to pass materials and lights as explicit uniforms.
-  \item \textbf{Flat ground, no drag.}  The projectile ignores air resistance and
-        the terrain is a plane; both are deliberate, per the brief's instruction
-        to keep the scope tight.
-  \item \textbf{No textures.}  All surface variety comes from the material
-        coefficients in Table~\ref{tab:materials}, which is what makes the
-        lighting model so legible in the figures.
+  \item \textbf{No shadows.}  A real medieval fort gate under three cannons
+        would show long shadows across the grass; we use a single
+        directional light but no shadow map.  Adding one is a textbook
+        shadow-mapping exercise: render the scene from the light's point of
+        view into a depth texture, then sample that texture in the
+        fragment shader and attenuate the lighting term.
+  \item \textbf{No specular highlight.}  \texttt{lit.frag} is purely
+        Lambert + ambient; the brass rings on the barrel and the brass hub
+        caps on the wheels would visibly glint under direct sun with a
+        Blinn--Phong specular term.  Adding it is one line:
+        \texttt{pow(max(dot(N, halfwayDir), 0.0), shininess)}.
+  \item \textbf{No recoil.}  Real cannons kick backward when fired; ours
+        stay rigid.  The Python version had a damped-spring recoil
+        (\texttt{legacy/cannon.py}); bringing it across is just a small
+        extension to \texttt{Shaft} with a one-dimensional
+        $\ddot{x} + 2\zeta\omega\dot{x} + \omega^2 x = 0$ integrator.
+  \item \textbf{Only the centre cannon is controllable.}  Two cannons
+        would be trivially more work (one more \texttt{int} index into
+        the array of \texttt{Cannon}s and one more \texttt{glfwGetKey}),
+        but the brief was for \emph{one} controllable cannon plus
+        decoration.
+  \item \textbf{No sound.}  No audio library was added; a real
+        cannon-firing sound (with reverb for the fort's stone walls) would
+        round out the demonstration but adds a non-graphical dependency.
+\end{itemize}
+
+\subsection{Things that were tried and removed}
+
+\begin{itemize}[itemsep=2pt,topsep=3pt]
+  \item \textbf{Sharing one \texttt{Mesh} across multiple bricks} in
+        \texttt{Wall} / \texttt{FortGate}.  Caused silent GPU buffer
+        double-free at shutdown --- replaced with one \texttt{Mesh} per
+        brick.
+  \item \textbf{Camera orbit.}  Early in development the camera was
+        controllable with the mouse; removed because it made the scene
+        too hard to read --- fixed viewpoint, taken from
+        \texttt{lookAt(-5, 3, 7)} looking at \texttt{(8, 0.7, 0)}.
+  \item \textbf{Wireframe overlay.}  Useful for debugging but cluttered
+        the report; removed.
 \end{itemize}
 
 %=============================================================================
-\appendix
-\section{Verification output}
-\label{app:verify}
+\section{Walkthrough}
 %=============================================================================
 
-Produced by \texttt{python verify.py}; every number quoted in
-\S4 comes from this run.
+The full Bangla-language teaching walkthrough of every C++ class, with
+pictures rendered from the actual code by
+\texttt{Project1/tools/RenderDocShots.cpp}, lives in
+\texttt{docs/code-walkthrough.md}.  It walks the reader from "what does
+OpenGL actually do" through "what is a model matrix", "how do you draw a
+sphere", "how do you compose a hierarchical scene graph", and finally the
+three phase-specific classes (\texttt{Projectile}, \texttt{Wall},
+\texttt{FortGate}, \texttt{Cannon}, \texttt{Tree}, \texttt{Robot}) and the
+final \texttt{Main.cpp} loop.  Every figure in that document is
+regenerated by running \texttt{mingw32-make shots} from inside
+\texttt{Project1/}.
 
-\lstinputlisting[basicstyle=\ttfamily\tiny,frame=single,
-                 rulecolor=\color{black!25},backgroundcolor=\color{codebg}]{verification.txt}
+%=============================================================================
+\section*{Acknowledgements}
+%=============================================================================
+
+\noindent
+Built with GCC 16 (WinLibs MinGW-w64), GLFW 3.5.1, GLAD, GLM, and the
+standard C++17 library.  Run-time tested on Windows 11 with an AMD
+Radeon 760M and OpenGL 4.6 driver.  All physics, matrix and lighting
+formulas in this report are standard textbook material; the closed-form
+range formula $R = v_0^2 \sin 2\theta / g$ is the canonical projectile-
+motion result.
 
 \end{document}
