@@ -825,3 +825,28 @@ run; the full text is in [`verification.txt`](verification.txt).
   muzzle at x=4.0 : (5.6407, 1.8685, 0.000)
   delta           : (4.0000, 0.0000, 0.000)   <- pure translation of the root
 ```
+
+---
+
+## Appendix: C++ / OpenGL rewrite (Phases 1–3)
+
+This report was written for the **Python / PyOpenGL** version of the project
+(`legacy/`, which also holds the verification script that produced the
+numbers in §8). The current deliverable is the C++ / OpenGL 3.3 core
+rewrite under `Project1/`. The work was split into three phases:
+
+- **Phase 1** — single cannon, rolling wheels, hierarchical barrel pivot,
+  Lambert lighting (`lit.vert`/`lit.frag`).
+- **Phase 2** — `Projectile` (semi-implicit Euler physics, sphere mesh),
+  `Wall` (grid of breakable AABB bricks with sphere-vs-AABB collision).
+- **Phase 3** — `Cannon` wrapper that lets `Main.cpp` place three cannons
+  with one line per gun, `FortGate` (a real medieval doorway — non-breakable
+  pillars + lintel plus breakable brick stacks), `Tree` (cylinder trunk +
+  cone crown), `Robot` (cube body/head + cylinder arms/legs) standing inside
+  the fort as a target.
+
+The C++ deliverable, including the same concept → math → code teaching
+style as this report, is documented line-by-line in
+[`code-walkthrough.md`](code-walkthrough.md). Build & run instructions are
+in [§2 of this report](#2-how-to-run-the-project), updated to use
+`mingw32-make` against the `Makefile` in that folder.
