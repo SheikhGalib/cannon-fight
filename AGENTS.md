@@ -48,7 +48,7 @@ Or run the exe directly after building — **must run from inside `Project1/`**,
 `Project1/ChatGPT.cpp` defines its own `int main()` and is **not** referenced anywhere in `Project1.vcxproj` or the `Makefile` — it's scratch/exploration code. Never add it to the build's source list (`Main.cpp` already has `int main()`; compiling both is a duplicate-symbol link error).
 
 ### Current state of `Main.cpp`
-`Main.cpp` no longer draws the single test square described in earlier revisions of this file — it builds the full Phase 1 cannon: a ground plane plus a small scene graph rooted at `Carriage`, with two `Wheel`s and one `Shaft` (the barrel) drawn relative to the carriage's matrix. Shading is the `lit.vert`/`lit.frag` directional-light shader.
+`Main.cpp` no longer draws the single test square described in earlier revisions of this file — it builds the full Phase 2 scene: a ground plane, the cannon scene graph (`Carriage` → `Wheel`s → `Shaft`), a breakable brick wall in front of the gun, and a list of in-flight `Projectile`s. Shading is the `lit.vert`/`lit.frag` directional-light shader.
 
 Classes under `Project1/`, roughly bottom-up:
 
@@ -62,9 +62,11 @@ Classes under `Project1/`, roughly bottom-up:
 | `Transform` | position + one rotation axis/angle + scale → a model matrix. |
 | `Carriage` | The wooden body: trail beams, transoms, trail spade, cheeks, quoin block, axle, bolster. **Root of the cannon's scene graph** — `GetMatrix()` is the parent of both wheels and the barrel. `MoveForward()` drives it. |
 | `Wheel` | Spoked cartwheel (tire tube + felloe tube + N spoke boxes + hub + brass caps). Rolls about Z via `Roll(distance)`. |
-| `Shaft` | The barrel: a stack of cones (breech → reinforce → chase → muzzle swell) with brass rings, a dark bore, and trunnions. Local origin **is** the trunnion pivot, so `Elevate()` is a plain rotation with no correcting translation. Trunnions are drawn without the elevation rotation since they're the hinge, not the thing swinging on it. |
+| `Shaft` | The barrel: a stack of cones (breech → reinforce → chase → muzzle swell) with brass rings, a dark bore, and trunnions. Local origin **is** the trunnion pivot, so `Elevate()` is a plain rotation with no correcting translation. Trunnions are drawn without the elevation rotation since they're the hinge, not the thing swinging on it. New in Phase 2: `GetMuzzleWorldPosition(parentMatrix)` returns the world-space tip of the barrel and `GetForwardWorldDirection(parentMatrix)` returns the world-space firing axis at the current elevation — both are what `Projectile` uses to spawn each shot. |
+| `Projectile` | A single cannon ball: a sphere mesh plus world-space position and velocity. `Update(deltaTime, gravity)` is semi-implicit Euler (per spec, see `phase-2-plan.md` and `legacy/verification.txt §2`). `IsDead()` is true once the ball hits the ground or ages out, so `Main.cpp` can drop it from its vector. |
+| `Wall` | A grid of axis-aligned bricks (one `Mesh` each, plus a `local` matrix and an `alive` flag). `CheckHit(sphereCentre, sphereRadius)` is the standard sphere-vs-AABB test — any brick touched by the ball's bounding sphere flips its flag, and `Draw()` simply skips dead bricks. |
 
-Controls: ←/→ drive (wheels roll without slipping), ↑/↓ elevate the barrel (clamped 0–45°), Esc quits.
+Controls: ←/→ drive (wheels roll without slipping), ↑/↓ elevate the barrel (clamped 0–45°), **Space fires a cannon ball**, Esc quits.
 
 ### `Project1/tools/` — documentation image renderer
 

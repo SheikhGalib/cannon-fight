@@ -29,8 +29,11 @@
 - [পর্ব ১৩ — `Shaft`: নল (Barrel)](#পর্ব-১৩--shaft-নল-barrel)
 - [পর্ব ১৪ — Scene Graph: সব জোড়া লাগানো](#পর্ব-১৪--scene-graph-সব-জোড়া-লাগানো)
 - [পর্ব ১৫ — আপনার যাত্রা (key চাপলে কী হয়)](#পর্ব-১৫--আপনার-যাত্রা-key-চাপলে-কী-হয়)
-- [পর্ব ১৬ — বিল্ড ও রান](#পর্ব-১৬--বিল্ড-ও-রান)
-- [পর্ব ১৭ — নিজে হাতে পরীক্ষা করুন](#পর্ব-১৭--নিজে-হাতে-পরীক্ষা-করুন)
+- [পর্ব ১৬ — Phase 2: `Projectile` — কামানের গুলি, পদার্থবিদ্যা সহ](#পর্ব-১৬--phase-2-projectile--কামানের-গুলি-পদার্থবিদ্যা-সহ)
+- [পর্ব ১৭ — Phase 2: `Wall` — ভাঙা যায় এমন দেয়াল](#পর্ব-১৭--phase-2-wall--ভাঙা-যায়-এমন-দেয়াল)
+- [পর্ব ১৮ — `Main.cpp` Phase 2 লুপ: spawn, update, draw](#পর্ব-১৮--maincpp-phase-2-লুপ-spawn-update-draw)
+- [পর্ব ১৯ — বিল্ড ও রান](#পর্ব-১৯--বিল্ড-ও-রান)
+- [পর্ব ২০ — নিজে হাতে পরীক্ষা করুন](#পর্ব-২০--নিজে-হাতে-পরীক্ষা-করুন)
 - [শব্দকোষ (Glossary)](#শব্দকোষ-glossary)
 
 ---
@@ -2057,7 +2060,282 @@ trunnion                2
 
 ---
 
-## পর্ব ১৬ — বিল্ড ও রান
+## পর্ব ১৬ — Phase 2: `Projectile` — কামানের গুলি, পদার্থবিদ্যা সহ
+
+Phase 1-এ কামান **দেখতে** পারতাম, চালাতে পারতাম, নল তুলতে পারতাম — কিন্তু
+**কাজ** করত না। Phase 2 এটাকে "আগুন" দেয়: স্পেসবার চাপলে মুখ থেকে একটা
+লোহার গোলা বেরিয়ে মাটিতে পড়ার আগে দেয়ালে আঘাত করে।
+
+### ১৬.১ সমস্যাটা — ছোট্ট করে
+
+```
+    এই মুহূর্তে (t)                একটু পরে (t + dt)
+                                            
+    বল (v)        গুলি (pos)    →    বল (v − g·dt·ĵ)   গুলি (pos + v·dt)
+
+    v.y -= g * dt;
+    pos += v * dt;
+```
+
+`g` (মাধ্যাকর্ষণ) = 9.81 m/s² — পৃথিবীর সেই বিখ্যাত ৯.৮।
+
+এটাকে বলে **semi-implicit Euler** — সবচেয়ে সহজ কাজের ইন্টিগ্রেটর।
+পাইথন ভার্সনেও (`legacy/projectile.py`) এই একই সূত্র, আর `docs/verification.txt`
+§2 তে একটা বন্ধ-ফর্ম সমাধানের সাথে মিলিয়ে দেখা হয়েছে যে এটা যথেষ্ট।
+
+### ১৬.২ ক্লাসের গঠন
+
+`Projectile` ক্লাসটা দৃশ্যের সবচেয়ে ছোট জিনিস — একটা sphere mesh,
+একটা `position`, একটা `velocity`, একটা `radius`। ব্যস। এর কোনো parent
+matrix নেই, কারণ মুখ থেকে বের হওয়ার পর গুলি আর কামানের "সন্তান" না —
+সে তার নিজের জীবন কাটায়।
+
+```cpp
+// Projectile.h - অতি সংক্ষেপে
+class Projectile {
+public:
+    Projectile(glm::vec3 muzzlePos, glm::vec3 velocity, float radius);
+    void Update(float deltaTime, float gravity);
+    void Draw(Shader& shader);
+    glm::vec3 GetPosition() const;
+    bool IsDead() const;
+
+    static constexpr float LifetimeSeconds = 6.0f;
+    static constexpr float DefaultSpeed    = 14.0f;
+    static constexpr float Gravity         = 9.81f;
+
+private:
+    Mesh mesh;
+    glm::vec3 position;
+    glm::vec3 velocity;
+    float radius;
+    float ageSeconds = 0.0f;
+    bool   dead      = false;
+};
+```
+
+> **Mesh কেন member-initializer list-এ?** কারণ Mesh-এর কোনো default
+> constructor নেই — সে GPU buffer IDs-এর মালিক, সেগুলো অবশ্যই `Primitives::CreateSphere`
+> দিয়ে তৈরি হতে হবে। তাই `mesh(Primitives::CreateSphere(...))` initializer
+> list-এই থাকে, body-তে পরে আর কিছু করার দরকার নেই।
+
+### ১৬.৩ মুখের অবস্থান — কোথা থেকে ছোড়া হচ্ছে
+
+গুলি মুখের **ডগা** থেকে বের হওয়া উচিত, নইলে কামানের ভেতর দিয়ে উড়ে
+যাবে। মুখের অবস্থান সরাসরি `Shaft` ক্লাসের কাছে জিজ্ঞেস করি:
+
+```cpp
+// Shaft.cpp
+glm::vec3 Shaft::GetMuzzleWorldPosition(const glm::mat4& parentMatrix) const {
+    // মুখের ডগা barrel-space-এ (MuzzleX, 0, 0) বসে; shaft-এর পুরো
+    // transform (অবস্থান + উচ্চতা) এবং তারপর parent (গাড়ি) লাগিয়ে
+    // world-space পাই - ঠিক যেটা Draw() নলের জন্য ব্যবহার করে।
+    glm::vec4 muzzleLocal(Dim::MuzzleX, 0.0f, 0.0f, 1.0f);
+    return parentMatrix * transform.GetMatrix() * muzzleLocal;
+}
+
+glm::vec3 Shaft::GetForwardWorldDirection(const glm::mat4& parentMatrix) const {
+    // বেগলনে (translation-মুক্ত) ম্যাট্রিক্সের ওপর দিয়ে +X অক্ষ
+    // উঠিয়ে আনি — কারণ দিকনির্দেশনায় translation চাই না।
+    glm::mat4 rotOnly = parentMatrix * glm::rotate(glm::mat4(1.0f),
+                                                   glm::radians(elevationDegrees),
+                                                   glm::vec3(0.0f, 0.0f, 1.0f));
+    return glm::normalize(glm::vec3(rotOnly * glm::vec4(1.0f, 0.0f, 0.0f, 0.0f)));
+}
+```
+
+`Main.cpp` এই দুটোকে একসাথে জুড়ে একটা নতুন গুলি তৈরি করে:
+
+```cpp
+mat4 carriageM = carriage.GetMatrix();
+vec3 muzzle    = shaft.GetMuzzleWorldPosition(carriageM);
+vec3 forward   = shaft.GetForwardWorldDirection(carriageM);
+projectiles.emplace_back(muzzle, forward * Projectile::DefaultSpeed, Projectile::DefaultRadius);
+```
+
+এটাই সেই hierarchical-transform-এর "বড় মুহূর্ত" যেটার কথা [phase-2-plan.md](phase-2-plan.md)
+বলে — শুট করার ঠিক **সেই মুহূর্তে** বর্তমান গাড়ির matrix জানা দরকার, তারপর
+গুলি নিজস্ব world-space-এ চলে যায়।
+
+### ১৬.৪ Update() এবং ধ্বংস
+
+```cpp
+void Projectile::Update(float deltaTime, float gravity) {
+    velocity.y -= gravity * deltaTime;
+    position   += velocity * deltaTime;
+    ageSeconds += deltaTime;
+
+    if (position.y < 0.0f || ageSeconds > LifetimeSeconds) {
+        dead = true;
+    }
+}
+```
+
+`dead` ফ্ল্যাগ উঠলে `Main.cpp` `std::remove_if` দিয়ে ভেক্টর থেকে গুলিটা
+মুছে দেয়। `IsDead()` ছাড়া আর কোনো উপায়ে destructor-এর সাথে এই ফ্ল্যাগ
+জড়িত না — destructor শুধু `Mesh::Delete()` কল করে GPU buffer মুক্ত করে।
+
+---
+
+## পর্ব ১৭ — Phase 2: `Wall` — ভাঙা যায় এমন দেয়াল
+
+কামানের গুলি কোথায় আঘাত করবে? একটা দেয়ালে। সেই দেয়ালটা
+`Wall` ক্লাস — `rows × cols` টা ইটের একটা grid, প্রতিটা ইট একটা
+axis-aligned বাক্স, প্রতিটা বাক্সের পাশে একটা `alive` ফ্ল্যাগ।
+
+### ১৭.১ বিন্যাস
+
+```
+    মাটি y=0
+    
+    z ধরে কোনো ছড়িয়ে ছিটিয়ে নেই - দেয়াল সরলরৈখিক, X বরাবর
+    
+    ↓ ↓ ↓ ↓ ↓
+    brick(brick, b ...)    y = 4·brickSize.y  (উপরের সারি)
+    brick ...             y = 3·brickSize.y
+    brick ...             y = 2·brickSize.y
+    brick(brick, b ...)    y = 1·brickSize.y  (নিচের সারি)
+    ──────────────────── y = 0  (মাটি)
+    ↕ brickSize.y
+    ↔ brickSize.x
+```
+
+এই সরলরেখা বিন্যাস বাছাই করা হয়েছে কারণ `CheckHit()` প্রতি ইটের জন্য
+sphere-vs-AABB করে — একটা কাত, বাঁকা, বা দরজা-আছে এমন দেয়াল (যেটা Phase 3
+এ আসবে) একই কাজ করবে, শুধু brick-এর সংখ্যা আর অবস্থান বদলাবে।
+
+### ১৭.২ সংঘর্ষ পরীক্ষা — sphere vs AABB
+
+গুলিকে একটা বল ধরি, প্রতিটা ইটকে একটা আয়তাকার বাক্স। গুলি বাক্সের
+**সবচেয়ে কাছের বিন্দু** পর্যন্ত দূরত্ব ≤ বলের ব্যাসার্ধ হলে ধাক্�কা। গণিতটা
+একদম পরিষ্কার:
+
+```cpp
+// প্রতি ইটের জন্য:
+glm::vec3 half = brickSize * 0.5f;
+glm::vec3 closest(
+    std::fmax(-half.x, std::fmin(sphereCentre.x - centre.x, half.x)),  // X মাত্রায়
+    std::fmax(-half.y, std::fmin(sphereCentre.y - centre.y, half.y)),  // Y মাত্রায়
+    std::fmax(-half.z, std::fmin(sphereCentre.z - centre.z, half.z))   // Z মাত্রায়
+);
+float distSq = glm::dot(closest, closest);
+if (distSq <= sphereRadius * sphereRadius) {
+    brick.alive = false;   // ইট মরে গেছে!
+}
+```
+
+`closest` ভেক্টর হলো "বল থেকে বাক্সের ভেতরের সবচেয়ে কাছের বিন্দুটা
+কতদূরে"। `glm::clamp`-এর মতোই — `fmax(-half, fmin(delta, half))` মানে
+"বাক্সের সীমানায় থাক বা ভেতরে ঢুকে যাও, যেটা আগে হয়"। যদি `closest`
+শূন্য হয় তাহলে বল **ভেতরে** আছে (নিশ্চিত ধাক্কা), নাহলে এটাই বল থেকে
+সবচেয়ে কাছের বিন্দুর দূরত্ব।
+
+### ১৭.৩ কেন প্রতি ইটের নিজস্ব Mesh?
+
+`Mesh` হলো GPU-র VAO/VBO/EBO-র মালিক — দুটো Mesh একই বাফার শেয়ার করতে
+পারে না (একটা delete করলে অন্যটার ডেটা মরে যায়)। তাই ~20টা ছোট বাক্সের
+জন্য 20টা আলাদা Mesh বানানো হচ্ছে। মেমোরিতে কয়েক কিলোবাইট — দৃশ্যের
+বাকি সব কিছুর তুলনায় কিছুই না।
+
+### ১৭.৪ প্রতিটা সারি 4 ইট উঁচু, প্রতিটা স্তম্ভ 5 ইট চওড়া
+
+`Main.cpp` এ দেয়ালটা তৈরি হচ্ছে:
+
+```cpp
+const vec3 wallCentre(12.0f, 0.0f, 0.0f);          // gun-এর 12 m সামনে
+const vec3 brickSize(0.40f, 0.40f, 0.40f);
+Wall wall(wallCentre, /*rows=*/4, /*cols=*/5, brickSize);
+```
+
+মোট 20টা ইট, প্রতিটা 0.4 m ঘনক্ষ — মোট দেয়াল 2.0 m × 1.6 m। কামানের
+গুলি 0.1 m ব্যাসার্ধ, এক-ফ্রেমে 14/60 ≈ 0.23 m যায় — ইটের চেয়ে ছোট,
+কিন্তু সংঘর্ষ-বল আসলে বল+ইটের অর্ধেক = 0.3 m, তাই কোনো ইট মিস হওয়ার
+সম্ভাবনা কম।
+
+---
+
+## পর্ব ১৮ — `Main.cpp` Phase 2 লুপ: spawn, update, draw
+
+Phase 1 এ `Main.cpp` ছিল: পড়ো input → carriage/wheel/shaft update → draw।
+Phase 2 এ যোগ হয়েছে: **spawn, update, draw** — তিনটা নতুন কাজ।
+
+### ১৮.১ spawn — স্পেসবার চাপলে
+
+```cpp
+static bool spacePrev = false;   // আগের ফ্রেমে চাপা ছিল কিনা
+bool spaceNow = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
+if (spaceNow && !spacePrev) {   // শুধু press-এর edge-এ, hold-এ না
+    mat4 carriageM = carriage.GetMatrix();
+    vec3 muzzle = shaft.GetMuzzleWorldPosition(carriageM);
+    vec3 forward = shaft.GetForwardWorldDirection(carriageM);
+    projectiles.emplace_back(muzzle, forward * Projectile::DefaultSpeed, Projectile::DefaultRadius);
+}
+spacePrev = spaceNow;
+```
+
+`spaceNow && !spacePrev` হলো **edge detection** — বাটন press-এর
+**শুরুতে** একবার, পরে ধরে রাখলে আর না। এটা Phase 1 এর continuous-input
+(↑/↓, ←/→) এর চেয়ে আলাদা — কেউ চাইবে না স্পেসবার ধরে রাখলে প্রতি ফ্রেমে
+একটা করে গুলি ছুটুক।
+
+### ১৮.২ update — প্রতি গুলির Update(), তারপর দেয়ালের সাথে সংঘর্ষ
+
+```cpp
+for (Projectile& ball : projectiles) {
+    ball.Update(deltaTime, Projectile::Gravity);
+    wall.CheckHit(ball.GetPosition(), ball.GetRadius());
+}
+```
+
+`Update()` বল উড়িয়ে দেয়, `CheckHit()` দেয় দেয়ালে গুলি লাগলো কিনা।
+দুটোই একই `position` পড়ছে, তাই লুপের ক্রম গুরুত্বপূর্ণ না — ফ্রেমের
+শেষে দুটোই consistent।
+
+### ১৮.৩ মৃত গুলি ঝেড়ে ফেলা
+
+```cpp
+projectiles.erase(
+    std::remove_if(projectiles.begin(), projectiles.end(),
+                   [](const Projectile& b) { return b.IsDead(); }),
+    projectiles.end());
+```
+
+এটা C++ এর ক্লাসিকাল **erase-remove idiom** — `std::remove_if`
+predicate মিথ্যে বলা সব element-কে ভেক্টরের **শেষে** সরিয়ে নিয়ে গিয়ে
+iterator-pair রিটার্ন করে, `erase` সেই রেঞ্জ মুছে দেয়। `Projectile`-এর
+`Mesh::Delete()` মৃত গুলির destructor-এ চলে যায় না (কারণ এখনো alive
+object-ই), কিন্তু alive অবস্থাতেই মুছে দিলে destructor-এই GPU buffer
+free হয়।
+
+### ১৮.৪ draw — একই `lit.vert`/`lit.frag`, একই shader
+
+গুলি একই শেডার ব্যবহার করে (sphere-ও vertex+normal+color সমেত বানানো
+হয়েছে, তাই `lit.frag` স্বাভাবিকভাবে Lambert diffuse + ambient দেয়)।
+শুধু `model` matrix প্রতি গুলির জন্য আলাদা — গুলির অবস্থান অনুযায়ী।
+
+```cpp
+for (Projectile& ball : projectiles) {
+    ball.Draw(shaderProgram);   // নিজের position ব্যবহার করে
+}
+```
+
+### ১৮.৫ একটা ছোট ভিজ্যুয়াল যাচাই
+
+Phase 2 এর behavior visually যাচাই করতে `tools/CapturePhase2.cpp` নামে
+একটা throwaway tool বানানো হয়েছে (Makefile এ নেই, শুধু হাতে চালানোর
+জন্য)। সেটা ৩ সেকেন্ড simulation forward চালায়, ৬টা গুলি ছোড়ে, তারপর
+একটা screenshot নেয়। ফলাফল:
+
+```
+After 3s: alive wall bricks = 18 (out of 20), live balls = 1
+```
+
+২টা ইট মরেছে, ১টা গুলি এখনো উড়ছে। সেই screenshot এ লক্ষ্য করুন: দেয়ালে
+দুটো ফুটো, মাঝখানে একটা গুলি — Phase 2 কাজ করছে।
+
+---
+
+## পর্ব ১৯ — বিল্ড ও রান
 
 ```powershell
 cd Project1
@@ -2083,11 +2361,12 @@ mingw32-make clean      # exe মুছে দেয়
 | **←** | পেছনে |
 | **↑** | নল উপরে তোলা (সর্বোচ্চ ৪৫°) |
 | **↓** | নল নামানো (সর্বনিম্ন ০°) |
+| **Space** | গুলি ছোড়া |
 | **Esc** | বন্ধ |
 
 ---
 
-## পর্ব ১৭ — নিজে হাতে পরীক্ষা করুন
+## পর্ব ২০ — নিজে হাতে পরীক্ষা করুন
 
 কোড বুঝতে সবচেয়ে ভালো উপায় — ভেঙে ফেলা আর ঠিক করা। প্রতিটার পরে
 `mingw32-make run` দিন।
@@ -2104,6 +2383,9 @@ mingw32-make clean      # exe মুছে দেয়
 | ৮ | `Primitives.cpp`: `CreateCylinder`-এ segments `6` | চাকা ষড়ভুজ হয়ে যাবে | বৃত্ত আসলে বহুভুজ |
 | ৯ | `Shaft.cpp`: সব `AlongX` → `AlongZ` | নল পাশে তাক করবে | orientation helper-এর কাজ |
 | ১০ | `Main.cpp`: `lookAt`-এর প্রথম যুক্তি বদলান | ক্যামেরা অন্য জায়গা থেকে দেখবে | view matrix |
+| ১১ | `Projectile.h`: `DefaultSpeed` → `30` | গুলি দেয়ালের অনেক উপর দিয়ে যাবে | muzzle speed আর trajectory |
+| ১২ | `Projectile.h`: `Gravity` → `20` | গুলি অনেক তাড়াতাড়ি মাটিতে পড়বে | gravity-র প্রভাব |
+| ১৩ | `Wall.cpp`: brick size `0.40` → `0.20` | দেয়াল অর্ধেক উঁচু হবে, বেশি ভাঙা যাবে | brick আকার |
 
 ---
 

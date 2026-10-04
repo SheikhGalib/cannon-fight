@@ -19,6 +19,10 @@ namespace Palette {
     inline const glm::vec3 Brass     (0.72f, 0.55f, 0.15f);  // barrel rings, trunnions, hub caps
     inline const glm::vec3 Bore      (0.03f, 0.03f, 0.03f);  // the hole in the muzzle
     inline const glm::vec3 Grass     (0.27f, 0.35f, 0.19f);  // the ground plane
+    inline const glm::vec3 Stone     (0.62f, 0.60f, 0.55f);  // the breakable wall (Phase 2)
+    inline const glm::vec3 Bark      (0.36f, 0.22f, 0.10f);  // tree trunks (Phase 3)
+    inline const glm::vec3 Leaf      (0.16f, 0.42f, 0.18f);  // tree leaves (Phase 3)
+    inline const glm::vec3 Copper    (0.55f, 0.40f, 0.20f);  // dummy robot body (Phase 3)
 
 }
 

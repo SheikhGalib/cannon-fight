@@ -8,7 +8,7 @@ LDFLAGS := -static-libgcc -static-libstdc++ -static
 
 # Everything except the file that holds main(). Both the game and the doc-image
 # tool link against these, they just each add their own main() on top.
-COMMON := VAO.cpp VBO.cpp EBO.cpp shaderClass.cpp glad.c Transform.cpp Mesh.cpp Primitives.cpp Part.cpp Carriage.cpp Wheel.cpp Shaft.cpp
+COMMON := VAO.cpp VBO.cpp EBO.cpp shaderClass.cpp glad.c Transform.cpp Mesh.cpp Primitives.cpp Part.cpp Carriage.cpp Wheel.cpp Shaft.cpp Projectile.cpp Wall.cpp
 SRCS := Main.cpp $(COMMON)
 SHOT_SRCS := tools/RenderDocShots.cpp $(COMMON)
 

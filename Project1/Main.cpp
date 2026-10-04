@@ -1,4 +1,6 @@
 #include <iostream>
+#include <vector>
+#include <algorithm>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -12,6 +14,8 @@
 #include "Carriage.h"
 #include "Wheel.h"
 #include "Shaft.h"
+#include "Projectile.h"
+#include "Wall.h"
 
 using namespace std;
 using namespace glm;
@@ -26,7 +30,7 @@ int main() {
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-	GLFWwindow* window = glfwCreateWindow(width, height, "Medieval Cannon - Phase 1", NULL, NULL);
+	GLFWwindow* window = glfwCreateWindow(width, height, "Medieval Cannon - Phase 2", NULL, NULL);
 	if (window == NULL) {
 		cout << "Failed to create window!" << endl;
 		glfwTerminate();
@@ -38,62 +42,47 @@ int main() {
 	glViewport(0, 0, width, height);
 	glEnable(GL_DEPTH_TEST);
 
-	// lit.vert/lit.frag add a single directional light (ambient floor +
-	// Lambertian diffuse) on top of the flat per-vertex colors, so shapes
-	// read as solid 3D forms instead of flat silhouettes. See lit.frag for
-	// why this is a deliberately small slice of Phase 2's full lighting
-	// requirement, pulled forward early because it turned out to matter
-	// this much for legibility even in Phase 1.
 	Shader shaderProgram("lit.vert", "lit.frag");
 
-	// --- Build the scene ----------------------------------------------------
-	// The cannon is a small scene graph with the CARRIAGE at its root:
-	//
-	//     Carriage                      <- the wooden body; moving it moves everything
-	//       |-- Wheel (left)  at Z = -track    <- rolls about the axle
-	//       |-- Wheel (right) at Z = +track
-	//       +-- Shaft (barrel) at the pivot    <- tips up and down
-	//
-	// Wheels and barrel are drawn with the carriage's matrix as their parent,
-	// which is what holds the gun together as one object: nothing here has to
-	// re-state where anything is in the world.
-	//
-	// All the actual measurements live in Dimensions.h and all the colors in
-	// Palette.h, so this file stays a description of the SCENE, not of shapes.
-
-	// Big enough that its far edge falls outside the view, so what you see at
-	// the top of the screen reads as a horizon rather than as the end of a mat.
 	Mesh ground = Primitives::CreatePlane(120.0f, 120.0f, Palette::Grass);
 
 	Carriage carriage;
 
-	// Both wheels sit on the axle: centred at wheel-radius height (so they
-	// just touch the ground) and one on each side of the centreline.
 	Wheel leftWheel(Dim::WheelRadius, Dim::WheelWidth, Dim::SpokeCount,
 	                vec3(0.0f, Dim::WheelRadius, -Dim::WheelTrack));
 	Wheel rightWheel(Dim::WheelRadius, Dim::WheelWidth, Dim::SpokeCount,
 	                 vec3(0.0f, Dim::WheelRadius, Dim::WheelTrack));
 
-	// The barrel hangs on its trunnions, up between the carriage cheeks.
 	Shaft shaft(vec3(Dim::PivotX, Dim::PivotY, Dim::PivotZ));
-	shaft.Elevate(12.0f); // start tipped up a little, so the pivot is visible
+	shaft.Elevate(12.0f);
 
-	// --- Fixed camera, looking at the gun from the front-right --------------
-	// (No camera controls yet - Phase 2 adds those. See docs/phase-2-plan.md.)
-	mat4 view = lookAt(vec3(4.8f, 2.7f, 5.5f), vec3(0.05f, 0.70f, 0.0f), vec3(0.0f, 1.0f, 0.0f));
-	mat4 proj = perspective(radians(45.0f), float(width) / float(height), 0.1f, 100.0f);
+	// --- Phase 2: the breakable wall ---------------------------------------
+	// It sits 12 m in front of the gun (positive X), 5 bricks wide and 4
+	// bricks tall. Each brick is 0.4 m on a side, so the wall is 2 m x 1.6 m
+	// - big enough to be a satisfying target, small enough to break through
+	// in a few hits.
+	const vec3 wallCentre(12.0f, 0.0f, 0.0f);
+	const vec3 brickSize(0.40f, 0.40f, 0.40f);
+	Wall wall(wallCentre, /*rows=*/4, /*cols=*/5, brickSize);
+
+	// --- Phase 2: live cannon balls in flight ------------------------------
+	std::vector<Projectile> projectiles;
+
+	mat4 projMatrix = perspective(radians(45.0f), float(width) / float(height), 0.1f, 100.0f);
+	// Camera behind and to the right of the cannon, looking down the barrel
+	// toward the wall. The wall is at +X, so the camera must be at -X to see
+	// the cannon and the wall in one shot.
+	mat4 view = lookAt(vec3(-4.5f, 2.5f, 5.5f), vec3(8.0f, 0.7f, 0.0f), vec3(0.0f, 1.0f, 0.0f));
 
 	GLuint viewLoc = glGetUniformLocation(shaderProgram.ID, "view");
 	GLuint projLoc = glGetUniformLocation(shaderProgram.ID, "proj");
 	GLuint modelLoc = glGetUniformLocation(shaderProgram.ID, "model");
 	GLuint lightDirLoc = glGetUniformLocation(shaderProgram.ID, "lightDir");
 
-	// A fixed "sun" direction: mostly downward, angled from front-left, so
-	// every shape picks up a clear bright side and a clear shaded side.
 	vec3 lightDir = normalize(vec3(-0.4f, -1.0f, -0.5f));
 
 	const float elevationSpeedDegPerSec = 30.0f;
-	const float driveSpeed = 2.0f; // metres per second
+	const float driveSpeed = 2.0f;
 	double lastFrameTime = glfwGetTime();
 
 	while (!glfwWindowShouldClose(window)) {
@@ -110,8 +99,6 @@ int main() {
 		}
 
 		// --- Input: Left/Right drive the whole gun ---------------------------
-		// The carriage moves and the wheels are told the same distance, so they
-		// roll exactly as far as the ground passes under them - no slipping.
 		float drive = 0.0f;
 		if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) drive += driveSpeed * deltaTime;
 		if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)  drive -= driveSpeed * deltaTime;
@@ -121,31 +108,65 @@ int main() {
 			rightWheel.Roll(drive);
 		}
 
+		// --- Input: Spacebar fires a cannon ball ----------------------------
+		// We need the carriage's matrix to be able to compute the world-space
+		// muzzle tip and the world-space forward direction. The ball spawns
+		// with muzzle speed along that forward direction - this is the
+		// "current aim" of the cannon at the instant of fire.
+		static bool spacePrev = false;
+		bool spaceNow = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
+		if (spaceNow && !spacePrev) {
+			mat4 carriageM = carriage.GetMatrix();
+			vec3 muzzleWorld = shaft.GetMuzzleWorldPosition(carriageM);
+			vec3 forwardWorld = shaft.GetForwardWorldDirection(carriageM);
+			projectiles.emplace_back(
+				muzzleWorld,
+				forwardWorld * Projectile::DefaultSpeed,
+				Projectile::DefaultRadius);
+		}
+		spacePrev = spaceNow;
+
 		if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
 			glfwSetWindowShouldClose(window, true);
 		}
 
-		// --- Draw ---------------------------------------------------------
-		glClearColor(0.55f, 0.72f, 0.87f, 1.0f); // sky blue
+		// --- Update: advance balls, check collisions -------------------------
+		// First: advance every ball and ask the wall if any of them hit. Then
+		// drop the ones that Update() flagged as dead (below the ground or
+		// aged out).
+		for (Projectile& ball : projectiles) {
+			ball.Update(deltaTime, Projectile::Gravity);
+			wall.CheckHit(ball.GetPosition(), ball.GetRadius());
+		}
+		projectiles.erase(
+			std::remove_if(projectiles.begin(), projectiles.end(),
+				[](const Projectile& b) { return b.IsDead(); }),
+			projectiles.end());
+
+		// --- Draw -----------------------------------------------------------
+		glClearColor(0.55f, 0.72f, 0.87f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		shaderProgram.Activate();
 
 		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, value_ptr(view));
-		glUniformMatrix4fv(projLoc, 1, GL_FALSE, value_ptr(proj));
+		glUniformMatrix4fv(projLoc, 1, GL_FALSE, value_ptr(projMatrix));
 		glUniform3fv(lightDirLoc, 1, value_ptr(lightDir));
 
-		// The ground sits a hair below y = 0 so that parts resting exactly on
-		// the ground (the trail spade, the wheel rims) don't fight it for depth.
 		mat4 groundMatrix = translate(mat4(1.0f), vec3(0.0f, -0.01f, 0.0f));
 		glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(groundMatrix));
 		ground.Draw();
 
-		// Everything on the gun is drawn relative to the carriage.
+		wall.Draw(shaderProgram);
+
 		mat4 carriageMatrix = carriage.GetMatrix();
 		carriage.Draw(shaderProgram, mat4(1.0f));
 		leftWheel.Draw(shaderProgram, carriageMatrix);
 		rightWheel.Draw(shaderProgram, carriageMatrix);
 		shaft.Draw(shaderProgram, carriageMatrix);
+
+		for (Projectile& ball : projectiles) {
+			ball.Draw(shaderProgram);
+		}
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
@@ -156,6 +177,8 @@ int main() {
 	leftWheel.Delete();
 	rightWheel.Delete();
 	shaft.Delete();
+	wall.Delete();
+	for (Projectile& ball : projectiles) ball.Delete();
 	shaderProgram.Delete();
 
 	glfwDestroyWindow(window);

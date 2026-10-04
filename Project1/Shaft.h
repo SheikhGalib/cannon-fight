@@ -37,6 +37,17 @@ public:
 
     float GetElevationDegrees() const { return elevationDegrees; }
 
+    // World-space position of the muzzle tip, given the parent matrix Draw()
+    // would be called with. Phase 2 uses this to spawn projectiles so they
+    // always leave the actual current muzzle, no matter how the gun has been
+    // driven or aimed.
+    glm::vec3 GetMuzzleWorldPosition(const glm::mat4& parentMatrix) const;
+
+    // World-space forward direction (unit vector, +X in barrel space) at the
+    // current elevation, in the same parent space. Phase 2 uses this to give
+    // each new projectile its initial velocity.
+    glm::vec3 GetForwardWorldDirection(const glm::mat4& parentMatrix) const;
+
     static constexpr float MinElevationDeg = 0.0f;
     static constexpr float MaxElevationDeg = 45.0f;
 

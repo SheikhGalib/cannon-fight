@@ -87,3 +87,23 @@ void Shaft::Delete() {
     DeleteParts(barrelParts);
     DeleteParts(trunnionParts);
 }
+
+glm::vec3 Shaft::GetMuzzleWorldPosition(const glm::mat4& parentMatrix) const {
+    // The muzzle sits at x = Dim::MuzzleX in barrel space, on the rotation
+    // axis (y = 0, z = 0). Apply the barrel's full transform (position +
+    // elevation) and then the parent, same matrix Draw() uses for the tube.
+    glm::vec4 muzzleLocal(Dim::MuzzleX, 0.0f, 0.0f, 1.0f);
+    glm::vec4 muzzleWorld = parentMatrix * transform.GetMatrix() * muzzleLocal;
+    return glm::vec3(muzzleWorld);
+}
+
+glm::vec3 Shaft::GetForwardWorldDirection(const glm::mat4& parentMatrix) const {
+    // The barrel's local +X axis, lifted into world space. (Translation has
+    // to be zeroed out so the direction isn't offset to wherever the muzzle
+    // happens to be.)
+    glm::mat4 rotOnly = parentMatrix * glm::rotate(glm::mat4(1.0f),
+                                                    glm::radians(elevationDegrees),
+                                                    glm::vec3(0.0f, 0.0f, 1.0f));
+    glm::vec3 localForward(1.0f, 0.0f, 0.0f);
+    return glm::normalize(glm::vec3(rotOnly * glm::vec4(localForward, 0.0f)));
+}
