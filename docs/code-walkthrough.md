@@ -32,8 +32,13 @@
 - [পর্ব ১৬ — Phase 2: `Projectile` — কামানের গুলি, পদার্থবিদ্যা সহ](#পর্ব-১৬--phase-2-projectile--কামানের-গুলি-পদার্থবিদ্যা-সহ)
 - [পর্ব ১৭ — Phase 2: `Wall` — ভাঙা যায় এমন দেয়াল](#পর্ব-১৭--phase-2-wall--ভাঙা-যায়-এমন-দেয়াল)
 - [পর্ব ১৮ — `Main.cpp` Phase 2 লুপ: spawn, update, draw](#পর্ব-১৮--maincpp-phase-2-লুপ-spawn-update-draw)
-- [পর্ব ১৯ — বিল্ড ও রান](#পর্ব-১৯--বিল্ড-ও-রান)
-- [পর্ব ২০ — নিজে হাতে পরীক্ষা করুন](#পর্ব-২০--নিজে-হাতে-পরীক্ষা-করুন)
+- [পর্ব ১৯ — Phase 3: `Cannon` — তিনটে কামান এক লাইনে](#পর্ব-১৯--phase-3-cannon--তিনটে-কামান-এক-লাইনে)
+- [পর্ব ২০ — Phase 3: `FortGate` — দুর্গের সদর দরজা, ভাঙা যায়](#পর্ব-২০--phase-3-fortgate--দুর্গের-সদর-দরজা-ভাঙা-যায়)
+- [পর্ব ২১ — Phase 3: `Tree` — সিলিন্ডার + শঙ্কু](#পর্ব-২১--phase-3-tree--সিলিন্ডার--শঙ্কু)
+- [পর্ব ২২ — Phase 3: `Robot` — কাঠের পুতুল, ঘড়ির যন্ত্র](#পর্ব-২২--phase-3-robot--কাঠের-পুতুল-ঘড়ির-যন্ত্র)
+- [পর্ব ২৩ — `Main.cpp` Phase 3 দৃশ্য: তিন কামান, দুর্গ, গাছ, রোবট](#পর্ব-২৩--maincpp-phase-3-দৃশ্য-তিন-কামান-দুর্গ-গাছ-রোবট)
+- [পর্ব ২৪ — বিল্ড ও রান](#পর্ব-২৪--বিল্ড-ও-রান)
+- [পর্ব ২৫ — নিজে হাতে পরীক্ষা করুন](#পর্ব-২৫--নিজে-হাতে-পরীক্ষা-করুন)
 - [শব্দকোষ (Glossary)](#শব্দকোষ-glossary)
 
 ---
@@ -59,13 +64,22 @@
 
 ```mermaid
 flowchart LR
-  Main[Main.cpp<br/>এন্ট্রি পয়েন্ট] --> Carriage[Carriage<br/>কাঠামো]
-  Main --> Wheel[Wheel x2<br/>চাকা]
-  Main --> Shaft[Shaft<br/>নল]
+  Main[Main.cpp<br/>এন্ট্রি পয়েন্ট] --> Cannon[Cannon x3<br/>তিন কামান]
+  Cannon --> Carriage[Carriage<br/>কাঠামো]
+  Cannon --> Wheel[Wheel x2<br/>চাকা]
+  Cannon --> Shaft[Shaft<br/>নল]
+  Main --> FortGate[FortGate<br/>দুর্গের গেট]
+  Main --> Tree[Tree x6<br/>গাছ]
+  Main --> Robot[Robot<br/>কাঠের পুতুল]
+  Main --> Projectile[Projectile<br/>গুলি]
   Carriage --> Part[Part + Local::<br/>কোথায় বসবে]
   Wheel --> Part
   Shaft --> Part
-  Part --> Prim[Primitives<br/>আকৃতি বানায়]
+  FortGate --> Part
+  Tree --> Part
+  Robot --> Part
+  Projectile --> Prim[Primitives<br/>আকৃতি বানায়]
+  Part --> Prim
   Prim --> Mesh[Mesh<br/>VAO/VBO/EBO]
   Mesh --> GPU[(GPU)]
   Main --> Shader[lit.vert + lit.frag] --> GPU
@@ -75,7 +89,7 @@ flowchart LR
   Pal[Palette.h<br/>সব রং] -.-> Prim
 ```
 
-> ক্যাপশন: `Main.cpp` তিনটা বড় অবজেক্ট বানায়; প্রত্যেকে `Part`-এর লিস্ট; প্রতিটা `Part` এর ভেতরে `Primitives` এর বানানো একটা `Mesh` — যা শেষমেশ GPU-তে যায়। ডটেড লাইনগুলো শুধু কনস্ট্যান্ট (মাপ আর রং) সরবরাহ করে।
+> ক্যাপশন: `Main.cpp` তিনটে `Cannon` (প্রতিটায় `Carriage` + `Wheel` + `Shaft`) আর একটা করে `FortGate`, `Tree` (৬টা), `Robot` বানায়। প্রত্যেকটা অবজেক্ট `Part`-এর লিস্ট; প্রতিটা `Part` এর ভেতরে `Primitives` এর বানানো একটা `Mesh` — যা শেষমেশ GPU-তে যায়। `Projectile` সরাসরি `Primitives` ব্যবহার করে, কারণ সে scene graph-এর অংশ না (মুখ থেকে বের হওয়ার পর নিজের world-space-এ চলে)। ডটেড লাইনগুলো শুধু কনস্ট্যান্ট (মাপ আর রং) সরবরাহ করে।
 
 ### ফাইলগুলোর ভূমিকা
 
@@ -85,6 +99,12 @@ flowchart LR
 | `Carriage.*` | কাঠের কাঠামো — কামানের "শরীর" | অবজেক্ট |
 | `Wheel.*` | স্পোক-ওয়ালা চাকা | অবজেক্ট |
 | `Shaft.*` | কামানের নল | অবজেক্ট |
+| `Cannon.*` | `Carriage + 2×Wheel + Shaft` wrapper — তিন কামান পাশাপাশি বসানো | অবজেক্ট |
+| `Projectile.*` | গুলি — sphere mesh + position/velocity, semi-implicit Euler | অবজেক্ট |
+| `Wall.*` | (Phase 2) ভাঙা-যায় এমন দেয়াল — Phase 3 এ `FortGate` দিয়ে প্রতিস্থাপিত | অবজেক্ট |
+| `FortGate.*` | (Phase 3) দুর্গের সদর দরজা — দুই পাথরের স্তম্ভ + কাঠের দণ্ড + ভাঙা-যায় এমন ইট | অবজেক্ট |
+| `Tree.*` | (Phase 3) সিলিন্ডার ট্রাঙ্ক + শঙ্কু ক্রাউন | অবজেক্ট |
+| `Robot.*` | (Phase 3) কাঠের পুতুল — cube-মাথা ও দেহ + cylinder-হাত ও পা | অবজেক্ট |
 | `Dimensions.h` | সব মাপ (মিটারে), এক জায়গায় | কনস্ট্যান্ট |
 | `Palette.h` | সব রং, এক জায়গায় | কনস্ট্যান্ট |
 | `Part.h/.cpp` | `{Mesh, matrix}` + `Local::` হেল্পার | আঠা |
@@ -2335,7 +2355,572 @@ After 3s: alive wall bricks = 18 (out of 20), live balls = 1
 
 ---
 
-## পর্ব ১৯ — বিল্ড ও রান
+## পর্ব ১৯ — Phase 3: `Cannon` — তিনটে কামান এক লাইনে
+
+Phase 1 ও Phase 2 এ একটাই কামান ছিল। Phase 3 এ আমরা চাই **তিনটে কামান**
+পাশাপাশি — মাঝেরটা চালকের, দুই পাশেরটা পার্ক করা। কিন্তু প্রতিটা কামান
+আসলে `Carriage + 2×Wheel + Shaft` এর জোড়া — প্রায় ১৫০০ লাইন ক্লাস।
+প্রতিবার `Carriage` আর `Wheel` আর `Shaft` এর কনস্ট্রাক্টর নিজে নিজে লিখলে
+`Main.cpp` ফুলে যাবে।
+
+### ১৯.১ সমাধান — `Cannon` wrapper
+
+`Cannon` ক্লাসটা এই চারটা জিনিসকে **একটা জিনিস** বানিয়ে দেয়:
+
+```cpp
+// Cannon.h
+class Cannon {
+public:
+    Cannon(glm::vec3 initialPosition);
+
+    void MoveForward(float distance);     // Carriage.MoveForward + 2×Wheel.Roll
+    void Elevate(float deltaDegrees);      // Shaft.Elevate
+    void Draw(Shader& shader);
+    void Delete();
+
+    glm::vec3 GetMuzzleWorldPosition() const;
+    glm::vec3 GetForwardWorldDirection() const;
+
+private:
+    Carriage carriage;
+    Wheel    leftWheel;
+    Wheel    rightWheel;
+    Shaft    shaft;
+};
+```
+
+### ১৯.২ কনস্ট্রাক্টর — প্রতিটা কামানকে নিজের জায়গায় বসানো
+
+তিনটে কামানকে শুধু `cannonSpacing` (2.5 m) দূরত্বে সরিয়ে দিতে হবে Z
+অক্ষ বরাবর — মাঝেরটা `z=0`, বাঁটা `z=+2.5`, ডানটা `z=-2.5`। এই
+অবস্থানটা `Carriage` কনস্ট্রাক্টরে পাঠাতে হবে (কারণ carriage-ই গাড়ির
+"গোড়া", সবকিছু তার parent matrix):
+
+```cpp
+// Cannon.cpp
+Cannon::Cannon(glm::vec3 initialPosition)
+    : carriage(initialPosition),
+      leftWheel (/*radius*/ Dim::WheelRadius, /*width*/ Dim::WheelWidth,
+                 /*spokes*/ Dim::SpokeCount,
+                 /*pos*/ vec3(0.0f, Dim::WheelRadius, -Dim::WheelTrack)),
+      rightWheel(/*radius*/ Dim::WheelRadius, /*width*/ Dim::WheelWidth,
+                 /*spokes*/ Dim::SpokeCount,
+                 /*pos*/ vec3(0.0f, Dim::WheelRadius,  Dim::WheelTrack)),
+      shaft     (vec3(Dim::PivotX, Dim::PivotY, Dim::PivotZ))
+{
+    shaft.Elevate(12.0f);   // parked flankers start tilted up a bit
+}
+```
+
+`Carriage`-এ এখন একটা নতুন কনস্ট্রাক্টর আছে — পুরনোটা `Carriage()` শূন্যে
+বসত, নতুনটা `Carriage(initialPosition)` নির্দিষ্ট জায়গায়:
+
+```cpp
+// Carriage.cpp
+Carriage::Carriage() : Carriage(glm::vec3(0.0f)) {}
+
+Carriage::Carriage(glm::vec3 initialPosition) {
+    transform.position = initialPosition;
+    // ... বাকি সব কনস্ট্রাকশন আগের মতোই
+}
+```
+
+### ১৯.৩ ডেলিগেশন — একই কাজ, এক জায়গায়
+
+`Carriage::MoveForward(d)` আগে-থেকেই নিজের `transform.position.x`
+বদলায়। `Wheel::Roll(d)` চাকা ঘোরায়। `Shaft::Elevate(d)` নল উপরে-নিচে
+করে। `Cannon` শুধু এই তিনটে কলকে এক জায়গায় পাঠায়:
+
+```cpp
+void Cannon::MoveForward(float distance) {
+    carriage.MoveForward(distance);
+    leftWheel.Roll(distance);
+    rightWheel.Roll(distance);
+}
+
+void Cannon::Elevate(float deltaDegrees) {
+    shaft.Elevate(deltaDegrees);
+}
+```
+
+`GetMuzzleWorldPosition()` আর `GetForwardWorldDirection()` ঠিক একইভাবে
+carriage-এর matrix-টা Shaft-এর কাছে পৌঁছে দেয় — [পর্ব ১৬.৩](#১৬৩-মুখের-অবস্থান--কোথা-থেকে-ছোড়া-হচ্ছে)-এ
+যা দেখিয়েছিলাম সেটাই, শুধু wrapper-এর ভেতর দিয়ে যাচ্ছে।
+
+### ১৯.৪ চালক ও পার্ক — `Main.cpp` এ যা বদলালো
+
+Phase 2 এর `carriage.MoveForward(...)` এখন `centreCannon.MoveForward(...)`,
+`leftWheel.Roll(...)` নেই (কারণ `Cannon::MoveForward` নিজেই চাকা ঘোরায়),
+`rightWheel.Roll(...)` ও নেই। তিনটে `Cannon` instance-ই আলাদা:
+
+```cpp
+Cannon centreCannon(vec3(0.0f,  0.0f,  0.0f));
+Cannon leftCannon  (vec3(0.0f,  0.0f,  cannonSpacing));
+Cannon rightCannon (vec3(0.0f,  0.0f, -cannonSpacing));
+```
+
+কন্ট্রোলগুলো শুধু `centreCannon`-এর দিকে যায়, কারণ `leftCannon` আর
+`rightCannon` পার্ক করা — শুধু দৃশ্যে বসানো, নড়ে না।
+
+---
+
+## পর্ব ২০ — Phase 3: `FortGate` — দুর্গের সদর দরজা, ভাঙা যায়
+
+Phase 2 এর `Wall` ছিল একটা চাকতি-মতো সমতল ইটের দেয়াল — গোলা আঘাত
+করলে ইট ভাঙত। Phase 3 এ আমরা চাই সেটাকে **একটা মধ্যযুগীয় দুর্গের সদর
+দরজা** বানাতে — মাঝখানে একটা দরজা (যেখান দিয়ে রোবট দেখা যায়), আর
+দু'পাশে ভাঙা-যায় এমন ইটের স্তম্ভ।
+
+### ২০.১ দৃশ্যটা — কোন কোন টুকরো কোথায়
+
+```
+                দরজার বাঁ পাশ         দরজার ডান পাশ
+                     │                     │
+                     ▼                     ▼
+                ┌───┬─────────────────────┬───┐
+                │   │   gateWidth (2.0 m) │   │   ← lintel (কাঠের দণ্ড)
+                │ P │                     │ P │     (non-breakable)
+                │ P │                     │ P │   ← pillars (পাথরের
+                │ P │                     │ P │     স্তম্ভ, non-breakable)
+                │ P ├─────────────────────┤ P │
+                │ I │ brick brick brick   │ I │
+                │ I │ brick brick brick   │ I │   ← breakable bricks
+                │ I │ brick brick brick   │ I │     (ভেঙে যায়)
+                └───┴─────────────────────┴───┘
+                  ↑                     ↑
+            leftPillarX          rightPillarX
+```
+
+- **দু'টো পাথরের স্তম্ভ** (pillar) — বাইরের দুই প্রান্তে, দরজার ঠিক পাশে।
+  Phase 3 এ **ভাঙে না** — এদের `staticParts` ভেক্টরে রাখা হয়েছে, `Brick`
+  ভেক্টরে না।
+- **একটা কাঠের দণ্ড** (lintel) — দরজার উপরে, দুই স্তম্ভের মাঝে।
+  Phase 3 এ ভাঙে না।
+- **দু'পাশে ইটের স্তম্ভ** — স্তম্ভের ভেতরের ফাঁক থেকে দণ্ডের নিচ পর্যন্ত।
+  Phase 3 এ **ভাঙে**, `Brick` ভেক্টরে `alive` ফ্ল্যাগ সহ।
+
+### ২০.২ ডেটা স্ট্রাকচার
+
+```cpp
+// FortGate.h
+class FortGate {
+public:
+    FortGate(glm::vec3 centreWorld,
+             float width, float height, float depth,
+             float gateWidth, int rows);
+
+    bool CheckHit(glm::vec3 sphereCentre, float sphereRadius);
+    void Draw(Shader& shader);
+    void Delete();
+    int AliveBrickCount() const;
+    int TotalBrickCount()  const;
+
+private:
+    struct Brick {
+        Mesh           mesh;     // প্রতিটা brick নিজস্ব GPU buffer রাখে
+        glm::mat4      local;    // এই brick-এর world matrix
+        bool           alive;    // গুলি লেগেছে?
+    };
+
+    std::vector<Part>  staticParts;   // pillars + lintel
+    std::vector<Brick> bricks;       // ভাঙা-যায় এমন ইট
+    glm::vec3         brickSize;     // সব brick-এর একই size, AABB-র জন্য cache
+};
+```
+
+> **প্রতিটা brick নিজস্ব Mesh কেন?** Phase 2 এর `Wall` এর মতো একই
+> কারণ — `Mesh::Delete()` একটা নির্দিষ্ট GPU buffer ID মুক্ত করে। যদি
+> দশটা brick একই Mesh শেয়ার করত, প্রথম brick-এর destructor-এই সবগুলোর
+> buffer মুক্ত হয়ে যেত, বাকিগুলো dangling ID নিয়ে বসে থাকত। তাই
+> brace-init দিয়ে প্রতিটা brick নিজের Mesh নিয়ে জন্মায়।
+
+### ২০.৩ কনস্ট্রাক্টর — সব টুকরো জায়গায় বসানো
+
+কনস্ট্রাক্টর প্রথমে static টুকরোগুলো (`pillars`, `lintel`) বসায়,
+তারপর breakable brick-গুলো গণনা করে ইটের সারিতে সাজায়:
+
+```cpp
+// FortGate.cpp (সংক্ষিপ্ত)
+const float halfWidth = width / 2.0f;
+const float halfGate  = gateWidth / 2.0f;
+const float leftPillarX  = centreWorld.x - halfGate;
+const float rightPillarX = centreWorld.x + halfGate;
+
+// --- দুই পাথরের স্তম্ভ -----------------------------------------
+const float pillarWidth = halfGate - (width/2 - halfGate);  // |leftPillar-leftOuter|
+for (float px : { leftPillarX, rightPillarX }) {
+    float xMid = (px == leftPillarX)
+        ? (leftPillarX + (centreWorld.x - halfWidth)) * 0.5f
+        : (rightPillarX + (centreWorld.x + halfWidth)) * 0.5f;
+    staticParts.push_back({
+        Primitives::CreateBox(pillarWidth, pillarHeight, pillarDepth, Palette::Stone),
+        glm::translate(glm::mat4(1.0f),
+                       glm::vec3(xMid, pillarHeight * 0.5f, centreWorld.z))
+    });
+}
+
+// --- দরজার উপরে কাঠের দণ্ড ---------------------------------------
+const float lintelHeight = 0.30f;
+staticParts.push_back({
+    Primitives::CreateBox(gateWidth + 0.10f, lintelHeight, pillarDepth, Palette::Wood),
+    glm::translate(glm::mat4(1.0f),
+                   glm::vec3(centreWorld.x, pillarHeight + lintelHeight*0.5f, centreWorld.z))
+});
+
+// --- দু'পাশে ভাঙা-যায় এমন brick ---------------------------------
+const float brickH = (pillarHeight + lintelHeight - lintelHeight*0.5f) / rows;
+const int   leftCols = std::max(1, int(std::floor(pillarWidth / brickH)));
+for (int r = 0; r < rows; r++) {
+    for (int c = 0; c < leftCols; c++) {
+        float x = (centreWorld.x - halfWidth) + (c + 0.5f) * (pillarWidth / leftCols);
+        bricks.push_back({
+            Primitives::CreateBox(pillarWidth/leftCols, brickH, pillarDepth*0.95f,
+                                  Palette::Stone),
+            glm::translate(glm::mat4(1.0f), glm::vec3(x, (r+0.5f)*brickH, centreWorld.z)),
+            true   // alive
+        });
+    }
+}
+```
+
+সবশেষে `brickSize` ক্যাশ করা হয় — `CheckHit` প্রতিটা brick-এর সাথে
+গুলির AABB পরীক্ষা করতে এটা ব্যবহার করবে।
+
+### ২০.৪ CheckHit — একই sphere-vs-AABB, Phase 2 এর মতো
+
+[পর্ব ১৭.৩](#১৭৩-চেকহিট--স্ফিয়ার-বনাম-aabb)-এ যেটা দেখিয়েছিলাম সেটাই
+— brick-এর local matrix থেকে কেন্দ্র, `brickSize`-এর অর্ধেক দিয়ে AABB,
+sphere centre থেকে AABB-র সবচেয়ে কাছের বিন্দু, দূরত্ব² ≤ r² হলে
+`alive = false`। Phase 3 এর FortGate-এ এটা একই রকম।
+
+### ২০.৫ Draw — alive ইটগুলোই আঁকা
+
+```cpp
+void FortGate::Draw(Shader& shader) {
+    GLuint modelLoc = glGetUniformLocation(shader.ID, "model");
+
+    for (Part& p : staticParts) {                  // পাথর ও কাঠ — সবসময় আঁকো
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(p.local));
+        p.mesh.Draw();
+    }
+    for (Brick& b : bricks) {                      // ইট — শুধু alive গুলো
+        if (!b.alive) continue;
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(b.local));
+        b.mesh.Draw();
+    }
+}
+```
+
+`alive = false` ইটগুলো শুধু **অদৃশ্য** হয়, `Mesh::Delete()` তাদের
+জন্য আলাদা ডেস্ট্রাক্টরে চলে যায়। ভেক্টর থেকে **মুছে যায় না**, কারণ
+`alive` ইটগুলোর সাথে index সামঞ্জস্য রাখতে হবে না — শুধু "আঁকব কি আঁকব না"
+এই সিদ্ধান্ত নিতে হবে। এটা `Wall` এর চেয়ে সহজ — Phase 3 এ brick-এর
+সংখ্যা কম, মুছে ফেললে কোনো লাভ নেই।
+
+---
+
+## পর্ব ২১ — Phase 3: `Tree` — সিলিন্ডার + শঙ্কু
+
+Phase 2 পর্যন্ত পটভূমি ফাঁকা ছিল — শুধু সবুজ মাঠ আর আকাশ। Phase 3 এ
+আমরা দুর্গের পেছনে কয়েকটা গাছ বসাতে চাই — কিন্তু সহজ, "শিশুর আঁকা
+গাছের" মতো।
+
+### ২১.১ দুই টুকরো, দুই কাজ
+
+```
+         ┌──────┐
+        ╱        ╲         ← crown (Primitives::CreateCone, Palette::Leaf)
+       ╱          ╲
+      ━━━━━━━━━━━━━
+       │          │
+       │          │        ← trunk (Primitives::CreateCylinder, Palette::Bark)
+       │          │
+       │          │
+       └──────────┘
+        ground ─────
+```
+
+- **trunk** — `Primitives::CreateCylinder(radius, height, segments, color)`
+  → বাদামী সিলিন্ডার। `centered=false`, `yOffset=0.0f` — মানে
+  সিলিন্ডারের **নিচ** মাটিতে বসে, মাঝ না।
+- **crown** — `Primitives::CreateCone(radius, 0, height, segments, color)`
+  → সবুজ শঙ্কু (তলার ব্যাসার্ধ `radius`, উপরের ব্যাসার্ধ `0` = একটা
+  বিন্দু)। `centered=false`, `yOffset=trunkHeight` — মানে শঙ্কুর
+  নিচ ট্রাঙ্কের **উপরে** শুরু হয়।
+
+`centered=false` এর জন্য `Primitives::CreateCylinder` ও `CreateCone`
+vertex গুলো `y ∈ [0, height]` রেঞ্জে বানায় — মধ্যবর্তী না। এটাই চাই,
+কারণ দুটোকে জোড়া দিতে হবে।
+
+### ২১.২ ক্লাস
+
+```cpp
+// Tree.h
+class Tree {
+public:
+    Tree(glm::vec3 baseWorld,
+         float trunkHeight, float trunkRadius,
+         float crownHeight, float crownRadius);
+
+    void Draw(Shader& shader);
+    void Delete();
+
+private:
+    Mesh  trunkMesh;
+    Mesh  crownMesh;
+    float trunkHeight, trunkRadius;   // cache (বর্তমানে Draw-তে দরকার নেই)
+    glm::mat4 transform;              // baseWorld → ground position
+};
+```
+
+### ২১.৩ কনস্ট্রাক্টর — দুটো mesh, একটা translation
+
+```cpp
+// Tree.cpp
+Tree::Tree(glm::vec3 baseWorld, float trunkH, float trunkR,
+                            float crownH, float crownR)
+    : trunkMesh(Primitives::CreateCylinder(trunkR, trunkH, 14, Palette::Bark,
+                                           /*centered=*/false, /*yOffset=*/0.0f)),
+      crownMesh(Primitives::CreateCone  (crownR, 0.0f, crownH, 18, Palette::Leaf,
+                                          /*centered=*/false, /*yOffset=*/trunkH))
+{
+    transform = glm::translate(glm::mat4(1.0f), baseWorld);
+}
+```
+
+`Mesh`-এর কোনো default constructor নেই (GPU buffer IDs নিয়ে জন্মায়),
+তাই দুটো mesh-ই **member-initializer list**-এ তৈরি হয়ে যাচ্ছে। body-তে
+শুধু `transform` সেট করার কাজ।
+
+### ২১.৪ Draw — একটাই model matrix, দুটো mesh
+
+```cpp
+void Tree::Draw(Shader& shader) {
+    GLuint modelLoc = glGetUniformLocation(shader.ID, "model");
+    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(transform));
+    trunkMesh.Draw();   // baseWorld-এর উপর trunk
+    crownMesh.Draw();   // baseWorld-এর উপর crown (trunkHeight উপরে)
+}
+```
+
+ট্রাঙ্ক আর ক্রাউন দুটো **কই `vector, কই translation`** — দুটো mesh-ই
+সেই একই world matrix-এর ভেতর দিয়ে যায়। তাই crownMesh-কে আলাদা
+`yOffset=trunkHeight` দিয়ে বানানো হয়েছে — তার নিজস্ব vertex-এর মধ্যেই
+"trunkHeight উপরে শুরু" ঢুকিয়ে দেওয়া হয়েছে।
+
+> **কেন এত সহজ?** কারণ গাছ **নড়ে না**। `Wheel.Roll()` বা
+> `Cannon.Elevate()`-এর মতো per-frame state নেই। একটা translation,
+> দুটো static mesh। ব্যস।
+
+### ২১.৫ Main.cpp — ছয়টা গাছ, zigzag সারি
+
+```cpp
+std::vector<Tree> trees;
+for (int i = 0; i < 6; i++) {
+    float x = 18.0f + float(i) * 3.0f;
+    float z = -8.0f + float(i % 2) * 4.0f;   // বেঞ্জু-বেঞ্জু, সারির মতো না
+    trees.emplace_back(vec3(x, 0.0f, z),
+                       2.0f, 0.20f, 3.0f, 1.5f);
+}
+```
+
+`i % 2` দিয়ে z-এর অবস্থান দুলছে — `z = -8` বা `z = -4`। এতে গাছগুলো
+একটা straight military line-এ না হয়ে একটু **অনিয়মিত** সারি দেখায় —
+প্রকৃতিতে গাছ তো সারি দিয়ে জন্মায় না।
+
+---
+
+## পর্ব ২২ — Phase 3: `Robot` — কাঠের পুতুল, ঘড়ির যন্ত্র
+
+Phase 3 এর শেষ নতুন জিনিস — দুর্গের ভেতরে দাঁড়ানো একটা **কাঠের পুতুল
+রোবট**। মধ্যযুগীয় আর্মারের যুগে স্বপ্নদৃষ্ট যন্ত্রমানব — "The Golem"
+বা ঘড়ি-যন্ত্রের ভয়াবহ সৃষ্টি। সবকিছু cube ও cylinder দিয়ে:
+
+### ২২.১ দৃশ্যটা
+
+```
+             ┌───┐
+             │ H │        ← head (cube)
+             │   │
+             └─┬─┘
+               │
+             ┌─┴─┐
+             │   │
+             │ B │        ← body (cube)
+             │   │
+             └───┘
+            ╱     ╲
+           ╱       ╲
+       ┌──┴──┐   ┌──┴──┐
+       │     │   │     │   ← legs (cubes)
+       │     │   │     │
+       └─────┘   └─────┘
+       ┌───┐         ┌───┐
+       │ A │         │ A │   ← arms (cylinders)
+       └───┘         └───┘
+```
+
+### ২২.২ ক্লাস
+
+`Robot` একটা একক `glm::mat4 transform` (পায়ের নিচে) আর তার ভেতরে
+একগাদা `Part` রাখে — যেমন `Carriage`:
+
+```cpp
+// Robot.h
+class Robot {
+public:
+    Robot(glm::vec3 baseWorld);
+    void Draw(Shader& shader);
+    void Delete();
+
+private:
+    std::vector<Part> parts;
+};
+```
+
+কোনো per-frame state নেই — রোবট স্থির, দরজার ভেতরে দাঁড়িয়ে গুলির
+অপেক্ষায়।
+
+### ২২.৩ কনস্ট্রাক্টর
+
+```cpp
+// Robot.cpp (সংক্ষিপ্ত)
+Robot::Robot(const std::vector<Part>& body, glm::vec3 baseWorld) {
+    glm::mat4 m = glm::translate(glm::mat4(1.0f), baseWorld);
+    for (Part p : body) { p.local = m * p.local; parts.push_back(p); }
+}
+```
+
+`Main.cpp` থেকে `Robot(vec3(13.0f, 0.0f, 0.0f))` দিয়ে ডাকলে এটা
+দুর্গের গেটের **পেছনে** বসে — গেটের brick গুলো `x ∈ [11.6, 12.4]`,
+তাই `x=13` স্পথকে নিশ্চিত করে রোবট **গেটের ভেতরে**, সামনে না।
+
+### ২২.৪ Draw ও Delete
+
+```cpp
+void Robot::Draw(Shader& shader) {
+    GLuint modelLoc = glGetUniformLocation(shader.ID, "model");
+    for (Part& p : parts) {
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(p.local));
+        p.mesh.Draw();
+    }
+}
+
+void Robot::Delete() {
+    for (Part& p : parts) p.mesh.Delete();
+}
+```
+
+`Carriage` আর `Shaft`-এর `Draw`/`Delete`-এর মতোই — যে pattern পুরো
+project-এ একই রকম।
+
+---
+
+## পর্ব ২৩ — `Main.cpp` Phase 3 দৃশ্য: তিন কামান, দুর্গ, গাছ, রোবট
+
+[পর্ব ১৮](#১৮--maincpp-phase-2-লুপ-spawn-update-draw)-এ দেখিয়েছিলাম
+Phase 2 এর মূল লুপ — কী-বোর্ড পড়া, projectile update, draw। Phase 3
+সেই একই লুপ, কিন্তু **দৃশ্যের বিষয়বস্তু** বদলে গেছে: একটা কামানের
+বদলে তিনটে, একটা দেয়ালের বদলে দুর্গের গেট, পেছনে ছয়টা গাছ, আর
+গেটের ভেতরে একটা রোবট।
+
+### ২৩.১ দৃশ্যের instantiation — `int main()`-এর শুরুতে
+
+```cpp
+// Main.cpp (Phase 3, সংক্ষিপ্ত)
+const float cannonSpacing = 2.5f;
+Cannon centreCannon(vec3(0.0f, 0.0f,  0.0f));
+Cannon leftCannon  (vec3(0.0f, 0.0f,  cannonSpacing));
+Cannon rightCannon (vec3(0.0f, 0.0f, -cannonSpacing));
+
+FortGate wall(vec3(12.0f, 0.0f, 0.0f),
+              /*width=*/5.0f, /*height=*/3.0f, /*depth=*/0.8f,
+              /*gateWidth=*/2.0f, /*rows=*/4);
+
+std::vector<Tree> trees;
+for (int i = 0; i < 6; i++) {
+    float x = 18.0f + float(i) * 3.0f;
+    float z = -8.0f + float(i % 2) * 4.0f;
+    trees.emplace_back(vec3(x, 0.0f, z), 2.0f, 0.20f, 3.0f, 1.5f);
+}
+
+Robot robot(vec3(13.0f, 0.0f, 0.0f));
+```
+
+### ২৩.২ ক্যামেরা — তিন কামান দেখার জন্য একটু চওড়া
+
+Phase 2 এ FOV ছিল 45°, কিন্তু তিনটে কামান Z অক্ষ বরাবর সাজানো, তাই
+সবকটাকে এক ফ্রেমে ধরতে একটু বেশি দরকার — 50°:
+
+```cpp
+mat4 projMatrix = perspective(radians(50.0f), float(width)/float(height), 0.1f, 100.0f);
+mat4 view = lookAt(vec3(-5.0f, 3.0f, 7.0f), vec3(8.0f, 0.7f, 0.0f), vec3(0,1,0));
+```
+
+ক্যামেরা পেছনে-ডানে, লক্ষ্য মাঝ কামানের সামনে — Phase 2 এর মতোই জায়গা,
+শুধু FOV বদলেছে।
+
+### ২৩.৩ স্পেসবার — edge detection
+
+Phase 2 এ স্পেসবার চেপে ধরলে প্রতি ফ্রেমে একটা গুলি ছুটত — মানে এক
+সেকেন্ডে ~৬০টা। **edge detection** লাগে:
+
+```cpp
+static bool spacePrev = false;
+bool spaceNow = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
+if (spaceNow && !spacePrev) {       // শুধু press-এর edge-এ
+    vec3 muzzle = centreCannon.GetMuzzleWorldPosition();
+    vec3 forward = centreCannon.GetForwardWorldDirection();
+    projectiles.emplace_back(muzzle, forward * Projectile::DefaultSpeed,
+                              Projectile::DefaultRadius);
+}
+spacePrev = spaceNow;
+```
+
+`spacePrev` আগের ফ্রেমে চাপা ছিল কি না মনে রাখে। `spaceNow && !spacePrev`
+মানে — **এই ফ্রেমে প্রথমবার চাপা হলো**। এভাবে এক চাপে একটাই গুলি।
+
+### ২৩.৪ Update ও Draw — একই loop, নতুন্তর subject
+
+লুপের update অংশ Phase 2 এর মতোই (projectile update, `Wall.CheckHit`),
+শুধু `Wall`-এর জায়গায় `FortGate`-এর check hit:
+
+```cpp
+for (Projectile& ball : projectiles) {
+    ball.Update(deltaTime, Projectile::Gravity);
+    wall.CheckHit(ball.GetPosition(), ball.GetRadius());   // ← FortGate-এর CheckHit
+}
+```
+
+Draw-এ নতুন যা যোগ হয়েছে — গাছ, রোবট, তিন কামান:
+
+```cpp
+for (Tree& t : trees) t.Draw(shaderProgram);
+wall.Draw(shaderProgram);
+robot.Draw(shaderProgram);
+centreCannon.Draw(shaderProgram);
+leftCannon.Draw(shaderProgram);
+rightCannon.Draw(shaderProgram);
+for (Projectile& ball : projectiles) ball.Draw(shaderProgram);
+```
+
+### ২৩.৫ যাচাই — `tools/CapturePhase3.cpp`
+
+Phase 2 এর CapturePhase2-এর মতো Phase 3 এর জন্যও একটা স্ক্রিনশট
+tool আছে (`tools/CapturePhase3.cpp`)। Makefile-এ এটা নেই (duplicate
+`main()`-এর নিয়ম) — হাতে কম্পাইল করে চালাতে হয়। ওটা simulation
+2 সেকেন্ড forward নিয়ে দুটো গুলি ছোড়ে, তারপর এক ফ্রেম আঁকে ও
+`.bmp` সেভ করে। ছবিতে দেখা যায়:
+
+- তিনটে কামান পাশাপাশি (মাঝেরটা সামান্য উপরে নল).
+- দুর্গের গেট — দুই পাথরের স্তম্ভ, কাঠের দণ্ড, দু'পাশে ইটের স্তম্ভ,
+  মাঝে খোলা দরজা।
+- দরজার ভেতরে রোবটের মাথা ও শরীর।
+- দুর্গের পেছনে ছয়টা গাছ (zigzag সারি)।
+
+---
+
+## পর্ব ২৪ — বিল্ড ও রান
 
 ```powershell
 cd Project1
@@ -2355,18 +2940,21 @@ mingw32-make clean      # exe মুছে দেয়
 
 ### নিয়ন্ত্রণ
 
+দৃশ্যে তিনটে কামান আছে — **শুধু মাঝেরটা** চালকের। পাশের দুটো পার্ক
+করা, নড়ে না।
+
 | কী | কাজ |
 |---|---|
-| **→** | কামান সামনে চালানো (চাকা গড়ায়) |
+| **→** | মাঝের কামান সামনে চালানো (চাকা গড়ায়) |
 | **←** | পেছনে |
-| **↑** | নল উপরে তোলা (সর্বোচ্চ ৪৫°) |
+| **↑** | মাঝের কামানের নল উপরে তোলা (সর্বোচ্চ ৪৫°) |
 | **↓** | নল নামানো (সর্বনিম্ন ০°) |
-| **Space** | গুলি ছোড়া |
+| **Space** | মাঝের কামান থেকে গুলি ছোড়া (edge-detected — এক চাপে একটাই) |
 | **Esc** | বন্ধ |
 
 ---
 
-## পর্ব ২০ — নিজে হাতে পরীক্ষা করুন
+## পর্ব ২৫ — নিজে হাতে পরীক্ষা করুন
 
 কোড বুঝতে সবচেয়ে ভালো উপায় — ভেঙে ফেলা আর ঠিক করা। প্রতিটার পরে
 `mingw32-make run` দিন।
@@ -2386,6 +2974,12 @@ mingw32-make clean      # exe মুছে দেয়
 | ১১ | `Projectile.h`: `DefaultSpeed` → `30` | গুলি দেয়ালের অনেক উপর দিয়ে যাবে | muzzle speed আর trajectory |
 | ১২ | `Projectile.h`: `Gravity` → `20` | গুলি অনেক তাড়াতাড়ি মাটিতে পড়বে | gravity-র প্রভাব |
 | ১৩ | `Wall.cpp`: brick size `0.40` → `0.20` | দেয়াল অর্ধেক উঁচু হবে, বেশি ভাঙা যাবে | brick আকার |
+| ১৪ | `Main.cpp`: `cannonSpacing` → `5.0f` | তিন কামান আরও দূরে সরে যাবে | wrapper-এর parametric offset |
+| ১৫ | `Main.cpp`: `fort gate gateWidth` → `0.5f` | দরজা সরু — গুলি ঢুকতে পারবে না | doorway আর target-এর সম্পর্ক |
+| ১৬ | `FortGate.cpp`: `lintelHeight` → `0.80f` | কাঠের দণ্ড অনেক মোটা | static vs breakable-এর পার্থক্য |
+| ১৭ | `Main.cpp`: `i < 6` → `i < 20` | ২০টা গাছ — পেছনে জঙ্গল | `std::vector` কীভাবে স্কেল করে |
+| ১৮ | `Tree.cpp`: trunk `Palette::Bark` → `Palette::Copper` | কাণ্ড লালচে ধাতব রঙ | primitive + palette pattern |
+| ১৯ | `Robot.cpp`: `headY` → `+0.3f` | রোবটের মাথা আরও উপরে | hierarchical translation |
 
 ---
 
@@ -2413,6 +3007,11 @@ mingw32-make clean      # exe মুছে দেয়
 - **trail beam** — কামানের কাঠামোর লম্বা কাত হওয়া কাঠ, যার পেছনের মাথা মাটিতে ঠেকে।
 - **transom** — দুই trail beam-এর মাঝে আড়াআড়ি জোড়া দেওয়া কাঠ।
 - **quoin** — breech-এর নিচের কাঠের কীলক/ধাপ।
+- **lintel** — দরজার উপরের আড়াআড়ি দণ্ড; এখানে কাঠের, কিন্তু Phase 3 এ non-breakable।
+- **pillar** — দরজার পাশের খাড়া স্তম্ভ; এখানে পাথরের, Phase 3 এ non-breakable।
+- **AABB** — Axis-Aligned Bounding Box। অক্ষ-সমান্তরাল একটা বাক্স যা দিয়ে গুলি-ইট সংঘর্ষ সস্তায় পরীক্ষা হয়।
+- **semi-implicit Euler** — `v.y -= g·dt; pos += v·dt;` — velocity আগে হালনাগাদ, তারপর position। সবচেয়ে সহজ কাজের পদার্থবিদ্যা ইন্টিগ্রেটর।
+- **edge detection (input)** — একটা বোতাম **প্রথমবার চাপা** হলো কি না সেই মুহূর্তটা ধরা — আগের ফ্রেমে চাপা ছিল কি না মনে রেখে। স্পেসবারের মতো "trigger" key-তে ব্যবহার হয় যাতে এক চাপে একটাই action হয়।
 
 ---
 
