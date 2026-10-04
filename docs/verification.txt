@@ -1,0 +1,82 @@
+Medieval Field Cannon -- numerical verification
+
+------------------------------------------------------------------------
+1.  Rolling constraint    phi = -s / R
+------------------------------------------------------------------------
+  wheel radius R          : 0.6200 m
+  distance driven s       : 2.6000 m
+  expected  -s/R          :  -240.2726 deg
+  simulated wheel_angle   :  -240.2726 deg
+  error                   : 2.672e-12 deg
+  rim arc length R|phi|   : 2.6000 m  (must equal s)
+
+------------------------------------------------------------------------
+2.  Muzzle point from the composite matrix
+------------------------------------------------------------------------
+  elev  0.0 deg, recoil 0.00 m
+    matrix chain   : (  3.3000,   1.1500,  0.000)
+    closed form    : (  3.3000,   1.1500,  0.000)
+    |difference|   : 0.000e+00 m
+    axis direction : (1.0000, 0.0000, 0.0000)   |d| = 1.000000
+  elev 32.0 deg, recoil 0.00 m
+    matrix chain   : (  3.0417,   2.0509,  0.000)
+    closed form    : (  3.0417,   2.0509,  0.000)
+    |difference|   : 0.000e+00 m
+    axis direction : (0.8480, 0.5299, 0.0000)   |d| = 1.000000
+  elev 45.0 deg, recoil 0.30 m
+    matrix chain   : (  2.5899,   2.1399,  0.000)
+    closed form    : (  2.5899,   2.1399,  0.000)
+    |difference|   : 0.000e+00 m
+    axis direction : (0.7071, 0.7071, 0.0000)   |d| = 1.000000
+
+------------------------------------------------------------------------
+3.  Projectile: semi-implicit Euler vs. the closed-form parabola
+------------------------------------------------------------------------
+  muzzle speed v0         : 15.00 m/s
+  gravity g               : 9.81 m/s^2
+
+   elev    t_exact      t_sim    R_exact      R_sim   rel.err
+   10.0     0.8598     0.8583    12.7015    12.6794    0.174 %
+   20.0     1.3090     1.3083    18.4506    18.4415    0.050 %
+   30.0     1.7578     1.7542    22.8348    22.7873    0.208 %
+   35.0     1.9717     1.9708    24.2265    24.2162    0.043 %
+   45.0     2.3645     2.3625    25.0796    25.0581    0.086 %
+
+  HUD prediction helper (fired from the muzzle height, y = 0 target):
+    elev 32 deg -> flight 1.847 s, range 23.494 m  (muzzle height 2.051 m)
+
+------------------------------------------------------------------------
+4.  Recoil: damped harmonic oscillator
+------------------------------------------------------------------------
+  k = 90.00 1/s^2   c = 16.1276 1/s
+  natural freq  w_n = sqrt(k)          : 9.4868 rad/s (1.510 Hz)
+  damping ratio zeta = c / 2 sqrt(k)   : 0.8500  (under-damped)
+  damped freq   w_d = w_n sqrt(1-z^2)  : 4.9975 rad/s
+  impulse v0                           : 3.40 m/s
+  analytic peak time  t_p              : 0.1110 s
+  analytic peak       x(t_p)           : 0.1464 m
+  dt = 1/240    peak 0.1375 m at t = 0.108 s, |err| vs analytic 6.09 %, settles (2%) at t = 0.558 s
+  dt = 1/480    peak 0.1419 m at t = 0.110 s, |err| vs analytic 3.05 %, settles (2%) at t = 0.556 s
+  dt = 1/4000   peak 0.1459 m at t = 0.111 s, |err| vs analytic 0.37 %, settles (2%) at t = 0.553 s
+  clamp RECOIL_MAX                     : 0.4200 m (never reached here)
+
+------------------------------------------------------------------------
+5.  Analytic normals of the truncated cone are correct
+------------------------------------------------------------------------
+  surface P(phi,t) = ((r0+(r1-r0)t)cos phi, ... , h t),  r0=0.175 r1=0.125 h=1.420
+  N = normalize(h cos phi, h sin phi, r0-r1)
+  max | |N| - 1 |          : 2.220e-16
+  max |N . tangent|        : 1.841e-17   (0 => N is the true surface normal)
+
+------------------------------------------------------------------------
+6.  Hierarchy: a child inherits every ancestor transform
+------------------------------------------------------------------------
+  muzzle at x=0.0 : (1.6407, 1.8685, 0.000)
+  muzzle at x=4.0 : (5.6407, 1.8685, 0.000)
+  delta           : (4.0000, 0.0000, 0.000)   <- pure translation of the root
+  recoil 0.30 m   : delta = (-0.2719, -0.1268, 0.000)
+  expected -rho*(cos25, sin25, 0) = (-0.2719, -0.1268, 0.000)
+  |error|         : 1.241e-16 m
+
+------------------------------------------------------------------------
+All checks completed.
