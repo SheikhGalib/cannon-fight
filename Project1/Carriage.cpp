@@ -17,7 +17,10 @@ float Carriage::BeamHeightAt(float x) {
     return Dim::BeamFrontY + t * (Dim::BeamRearY - Dim::BeamFrontY);
 }
 
-Carriage::Carriage() {
+Carriage::Carriage() : Carriage(glm::vec3(0.0f)) {}
+
+Carriage::Carriage(glm::vec3 initialPosition) {
+    transform.position = initialPosition;
     // --- the two trail beams ---------------------------------------------
     // A beam is one long box, so all we need is its length, its tilt, and the
     // midpoint to hang it on. Those come straight out of its two endpoints.

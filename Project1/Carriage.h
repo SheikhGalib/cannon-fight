@@ -29,6 +29,7 @@
 class Carriage {
 public:
     Carriage();
+    Carriage(glm::vec3 initialPosition);
 
     // Moves the whole gun along +X (forward) / -X (back).
     void MoveForward(float distance);

@@ -48,7 +48,7 @@ Or run the exe directly after building — **must run from inside `Project1/`**,
 `Project1/ChatGPT.cpp` defines its own `int main()` and is **not** referenced anywhere in `Project1.vcxproj` or the `Makefile` — it's scratch/exploration code. Never add it to the build's source list (`Main.cpp` already has `int main()`; compiling both is a duplicate-symbol link error).
 
 ### Current state of `Main.cpp`
-`Main.cpp` no longer draws the single test square described in earlier revisions of this file — it builds the full Phase 2 scene: a ground plane, the cannon scene graph (`Carriage` → `Wheel`s → `Shaft`), a breakable brick wall in front of the gun, and a list of in-flight `Projectile`s. Shading is the `lit.vert`/`lit.frag` directional-light shader.
+`Main.cpp` no longer draws the single test square described in earlier revisions of this file — it builds the full Phase 3 scene: a ground plane, three cannons in a row (only the centre one is keyboard-controlled), a fort-gate front wall (breakable bricks + non-breakable lintel and pillars), six trees behind the fort, a wooden dummy robot inside the fort, and a list of in-flight `Projectile`s. Shading is the `lit.vert`/`lit.frag` directional-light shader.
 
 Classes under `Project1/`, roughly bottom-up:
 
@@ -60,13 +60,17 @@ Classes under `Project1/`, roughly bottom-up:
 | `Primitives` | Geometry generators: `CreateCone` (the workhorse — a cylinder is the equal-radii case), `CreateCylinder`, `CreateTube`, `CreateBox`, `CreateSphere`, `CreatePlane`. **Everything it makes is built standing up, length along +Y**; orientation is not a parameter. |
 | `Part` / `Local::` | A `Part` is `{Mesh, glm::mat4 local}` — one rigid piece plus where it sits inside its owner. `Local::Move/MoveTurn/TurnMove/AlongX/AlongZ/AlongNegZ` build those matrices readably; `AlongX`/`AlongZ` are what turn the Y-up primitives sideways. `DrawParts()` uploads `objectMatrix * part.local` per part. |
 | `Transform` | position + one rotation axis/angle + scale → a model matrix. |
-| `Carriage` | The wooden body: trail beams, transoms, trail spade, cheeks, quoin block, axle, bolster. **Root of the cannon's scene graph** — `GetMatrix()` is the parent of both wheels and the barrel. `MoveForward()` drives it. |
+| `Carriage` | The wooden body: trail beams, transoms, trail spade, cheeks, quoin block, axle, bolster. **Root of the cannon's scene graph** — `GetMatrix()` is the parent of both wheels and the barrel. `MoveForward()` drives it. The Phase-3 constructor takes a starting position so three side-by-side cannons each have their own offset. |
 | `Wheel` | Spoked cartwheel (tire tube + felloe tube + N spoke boxes + hub + brass caps). Rolls about Z via `Roll(distance)`. |
 | `Shaft` | The barrel: a stack of cones (breech → reinforce → chase → muzzle swell) with brass rings, a dark bore, and trunnions. Local origin **is** the trunnion pivot, so `Elevate()` is a plain rotation with no correcting translation. Trunnions are drawn without the elevation rotation since they're the hinge, not the thing swinging on it. New in Phase 2: `GetMuzzleWorldPosition(parentMatrix)` returns the world-space tip of the barrel and `GetForwardWorldDirection(parentMatrix)` returns the world-space firing axis at the current elevation — both are what `Projectile` uses to spawn each shot. |
+| `Cannon` | Wraps one `Carriage` + two `Wheel`s + one `Shaft` so Phase 3 can place three of them with one line per gun. `MoveForward(d)` and `Elevate(d)` delegate to the inner parts; `GetMuzzleWorldPosition()` / `GetForwardWorldDirection()` pass the carriage matrix into the shaft. |
 | `Projectile` | A single cannon ball: a sphere mesh plus world-space position and velocity. `Update(deltaTime, gravity)` is semi-implicit Euler (per spec, see `phase-2-plan.md` and `legacy/verification.txt §2`). `IsDead()` is true once the ball hits the ground or ages out, so `Main.cpp` can drop it from its vector. |
-| `Wall` | A grid of axis-aligned bricks (one `Mesh` each, plus a `local` matrix and an `alive` flag). `CheckHit(sphereCentre, sphereRadius)` is the standard sphere-vs-AABB test — any brick touched by the ball's bounding sphere flips its flag, and `Draw()` simply skips dead bricks. |
+| `Wall` | A grid of axis-aligned bricks (one `Mesh` each, plus a `local` matrix and an `alive` flag). `CheckHit(sphereCentre, sphereRadius)` is the standard sphere-vs-AABB test — any brick touched by the ball's bounding sphere flips its flag, and `Draw()` simply skips dead bricks. Kept for reference; Phase 3 uses `FortGate` instead. |
+| `FortGate` | Phase 3's breakable front-of-fort. Two brick stacks flanking a doorway, with non-breakable stone pillars at the outer ends and a wooden lintel across the top. Same sphere-vs-AABB hit test as `Wall`; the lintel and pillars are stored separately as `Part`s and drawn every frame. |
+| `Tree` | A trunk cylinder + a green cone for the leaves, drawn relative to one transform that places the trunk's base on the ground. No animation, no per-leaf geometry — a "kid drawing a tree" in 3D, on purpose. |
+| `Robot` | A wooden dummy robot, literally cubes for body/head and cylinders for arms/legs, drawn relative to one transform at the feet. Stationary target inside the fort gate opening. |
 
-Controls: ←/→ drive (wheels roll without slipping), ↑/↓ elevate the barrel (clamped 0–45°), **Space fires a cannon ball**, Esc quits.
+Controls: ←/→ drive the centre cannon (wheels roll without slipping), ↑/↓ elevate the centre cannon's barrel (clamped 0–45°), **Space fires a cannon ball from the centre cannon only**, Esc quits. The two flanking cannons are parked.
 
 ### `Project1/tools/` — documentation image renderer
 
