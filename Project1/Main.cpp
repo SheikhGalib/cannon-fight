@@ -685,10 +685,21 @@ int main() {
 		bool yNow = glfwGetKey(window, GLFW_KEY_Y) == GLFW_PRESS;
 		if ((xNow && !xPrev) || (yNow && !yPrev)) {
 			useShadowMap = !useShadowMap;
+			if (useShadowMap) useRayTracing = false;
 			std::cout << "[Shadow Mapping] " << (useShadowMap ? "Soft PCF Shadows (Enabled)" : "Disabled") << std::endl;
 		}
 		xPrev = xNow;
 		yPrev = yNow;
+
+		// --- Input: K toggles Real-Time Ray Tracing (Ray-Box Slab Shadows) ---
+		static bool kPrev = false;
+		bool kNow = glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS;
+		if (kNow && !kPrev) {
+			useRayTracing = !useRayTracing;
+			if (useRayTracing) useShadowMap = false; // prioritize ray tracing
+			std::cout << "[Ray Tracing Mode] " << (useRayTracing ? "Real-Time Ray-Box Slab Shadowing (Enabled)" : "Disabled") << std::endl;
+		}
+		kPrev = kNow;
 
 		// --- Input: R (HOLD) raises the drawbridge (R for "raise") ------
 		bool rNow = glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS;
