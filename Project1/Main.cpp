@@ -1068,7 +1068,7 @@ int main() {
 			// Attacking infantry raise their shields!
 			for (Soldier& s : army) s.SetShieldRaised(true);
 
-			// Archers on castle towers loose arrows in volleys
+			// Archers on castle towers loose arrows in volleys (aiming at cannoneer 1 and army)
 			archerFireTimer += deltaTime;
 			if (archerFireTimer >= 1.0f) {
 				archerFireTimer = 0.0f;
@@ -1076,7 +1076,7 @@ int main() {
 					if (!archerAlive[ai]) continue;
 					archers[ai].TriggerShootAnim();
 					vec3 archerPos = archers[ai].GetPosition() + vec3(0.0f, 1.4f, 0.0f);
-					vec3 target = (ai % 2 == 0) ? crewCentre.GetPosition() : army[ai % army.size()].GetPosition();
+					vec3 target = (ai % 2 == 0) ? crewLeft.GetPosition() : army[ai % army.size()].GetPosition();
 					target.y += 1.0f;
 					vec3 diff = target - archerPos;
 					float dist = glm::length(diff);
@@ -1088,30 +1088,30 @@ int main() {
 				}
 			}
 
-			// Cannoneer (crewCentre) steps up to light cannon without a shield
+			// Cannoneer 1 (crewLeft) steps up to light cannon without a shield
 			if (battleTimer < 2.0f) {
 				float walkT = std::min(1.0f, battleTimer / 1.0f);
-				crewCentre.SetPosition(glm::mix(fireCentre.crewRestPos, fireCentre.crewFirePos, walkT));
-				crewCentre.SetYaw(0.0f);
+				crewLeft.SetPosition(glm::mix(fireLeft.crewRestPos, fireLeft.crewFirePos, walkT));
+				crewLeft.SetYaw(0.0f);
 			} else if (battleTimer >= 2.0f && !cannoneerHit) {
 				cannoneerHit = true;
-				crewCentre.SetDead();
-				fireCentre.crew = nullptr; // CANNOT FIRE WITHOUT CANNONEER!
-				particleSystem.EmitSparks(crewCentre.GetPosition() + vec3(0.0f, 1.2f, 0.0f), vec3(0, 1, 0), 20);
+				crewLeft.SetDead();
+				fireLeft.crew = nullptr; // 1st CANNON CANNOT FIRE WITHOUT CANNONEER!
+				particleSystem.EmitSparks(crewLeft.GetPosition() + vec3(0.0f, 1.2f, 0.0f), vec3(0, 1, 0), 20);
 			}
 
-			// Replacement soldier breaks formation from army and rushes to take over cannon!
+			// Replacement soldier breaks formation from army and rushes to take over cannon 1!
 			if (cannoneerHit && battleTimer >= 2.4f) {
 				float repT = std::min(1.0f, (battleTimer - 2.4f) / 1.6f);
-				vec3 repStart = armyBattlePos[2];
-				vec3 repTarget = fireCentre.crewFirePos;
-				army[2].SetPosition(glm::mix(repStart, repTarget, repT));
-				army[2].SetShieldRaised(false);
-				army[2].SetMarching(repT < 1.0f);
-				army[2].SetYaw(0.0f);
+				vec3 repStart = armyBattlePos[0];
+				vec3 repTarget = fireLeft.crewFirePos;
+				army[0].SetPosition(glm::mix(repStart, repTarget, repT));
+				army[0].SetShieldRaised(false);
+				army[0].SetMarching(repT < 1.0f);
+				army[0].SetYaw(0.0f);
 				if (repT >= 1.0f && !cannoneerReplaced) {
 					cannoneerReplaced = true;
-					fireCentre.crew = &army[2]; // Cannoneer arrives! Now cannon can fire!
+					fireLeft.crew = &army[0]; // Cannoneer arrives at cannon 1! Now it can fire!
 				}
 			}
 
@@ -1402,12 +1402,13 @@ int main() {
 			if (a.IsDead()) continue;
 			vec3 ap = a.GetPosition();
 
-			// Check cannoneer hit during Barrage
+			// Check cannoneer 1 (crewLeft) hit during Barrage
 			if (battle == BattlePhase::Barrage && !cannoneerHit) {
-				vec3 cp = crewCentre.GetPosition() + vec3(0.0f, 1.2f, 0.0f);
+				vec3 cp = crewLeft.GetPosition() + vec3(0.0f, 1.2f, 0.0f);
 				if (glm::distance(ap, cp) < 0.9f) {
 					cannoneerHit = true;
-					crewCentre.SetDead();
+					crewLeft.SetDead();
+					fireLeft.crew = nullptr;
 					particleSystem.EmitSparks(cp, vec3(0, 1, 0), 20);
 					a.Kill();
 					continue;
