@@ -40,7 +40,7 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
 
       gate(glm::vec3(centreWorld.x - compoundHalfX, 0.0f, centreWorld.z),
            /*width=*/5.0f, /*height=*/wallHeight, /*depth=*/0.8f,
-           /*gateWidth=*/gateWidth, /*rows=*/4),
+           /*gateWidth=*/4.0f, /*rows=*/4, /*alongZ=*/true),
 
       gatehouseTower (glm::vec3(centreWorld.x - compoundHalfX, 0.0f,
                                 centreWorld.z - 3.75f),
@@ -68,27 +68,16 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
                cornerSide, cornerHeight, 0.7f, 0.5f, 0.4f, 1.8f),
 
       // Moat: a 6 m wide strip of water on the -X side of the
-      // compound (where the cannons live).  Centred at
-      // (centreWorld.x - compoundHalfX - 4, 0, centreWorld.z).
-      // Now that the gatehouse towers sit on the curtain wall line (x=0),
-      // the moat starts just past the towers (x = -1).
-      // Phase 6: widened along Z to merge seamlessly with the wide
-      // river that runs across the rest of the scene.
+      // compound (where the cannons live).
       moat(glm::vec3(centreWorld.x - compoundHalfX - 4.0f, 0.0f,
                      centreWorld.z),
            /*sizeX=*/6.0f, /*sizeZ=*/24.0f),
 
-      // Bridge: spans the full moat width (6 m).  Centred at the
-      // moat centre so it hinges from the castle side and drops onto
-      // the cannon-side bank.  Phase 8: the hinge is at the CASTLE
-      // side (x = centre + 3 = -1) and the OUTER end at the cannon
-      // side (x = centre - 3 = -7).  When raised 90 deg the outer
-      // end swings straight up to y = lengthX = 6, sitting just past
-      // the gatehouse towers (which is the "other side" of the river
-      // the user is asking about).
-      bridge(glm::vec3(centreWorld.x - compoundHalfX - 4.0f, 0.0f,
+      // Bridge: extended across the river so it reaches all the way to
+      // the opposite grass bank (river bank at x = -10.0, bridge reaches -10.8).
+      bridge(glm::vec3(centreWorld.x - compoundHalfX - 5.8f, 0.0f,
                        centreWorld.z),
-             /*lengthX=*/6.0f, /*widthZ=*/3.0f)
+             /*lengthX=*/10.0f, /*widthZ=*/3.0f)
 {
     // ----- curtain walls --------------------------------------------------
     // The compound is `2 * compoundHalfX` long along X and `2 *
@@ -116,6 +105,9 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
     // Local helper: push a breakable stone segment + remember its
     // solidBox.  `size` is the full box size; `localMid` is the world
     // centre of the segment.
+    // Local helper: push a breakable stone segment + remember its
+    // solidBox.  `size` is the full box size; `localMid` is the world
+    // centre of the segment.
     auto addSegment = [&](WallSet& ws, glm::vec3 size, glm::vec3 localMid,
                           glm::vec3 half) {
         ws.segments.push_back({
@@ -125,18 +117,21 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
             half,
             size,
             true,
-            1.0f
+            1.0f,
+            {} // decor
         });
         solidBoxes.push_back({ localMid, half });
     };
-    // Local helper: push a non-breakable decor piece (corridor slab
-    // or merlon).
+    // Helper: attach decor piece to the most recently added segment.
+    // When that segment breaks, its decor (upper spokes/merlons/corridor)
+    // is destroyed with it!
     auto addDecor = [&](WallSet& ws, Mesh mesh, glm::mat4 local) {
-        ws.decor.push_back({ mesh, local });
+        if (!ws.segments.empty()) {
+            ws.segments.back().decor.push_back({ mesh, local });
+        }
     };
 
     // ---- North curtain (-Z side): x ∈ [-compoundHalfX, +compoundHalfX] --
-    // Outer face stays at cz - 0.7 (matches the old single-wall face).
     {
         const float lengthX = 2.0f * compoundHalfX;
         const float cx = centreWorld.x;
@@ -150,7 +145,11 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
                    vec3(lengthX, curtainBodyH, outerWallW),
                    vec3(cx, curtainBodyH * 0.5f, outerMidZ),
                    vec3(lengthX * 0.5f, curtainBodyH * 0.5f, outerWallW * 0.5f));
-        // Corridor slab (non-breakable).
+        // Merlons and corridor attached to outer body
+        auto merlons = Crenellation::AlongX(
+            cx - lengthX * 0.5f, merlonY, outerMidZ - merlonD * 0.5f,
+            lengthX, merlonW, merlonH, merlonD, gap, Palette::Stone);
+        for (auto& p : merlons) addDecor(curtainN, p.mesh, p.local);
         addDecor(curtainN,
                  Primitives::CreateBox(lengthX, corridorT, corridorW,
                                        Palette::Stone),
@@ -161,10 +160,6 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
                    vec3(lengthX, curtainBodyH, innerWallW),
                    vec3(cx, curtainBodyH * 0.5f, innerMidZ),
                    vec3(lengthX * 0.5f, curtainBodyH * 0.5f, innerWallW * 0.5f));
-        auto merlons = Crenellation::AlongX(
-            cx - lengthX * 0.5f, merlonY, outerMidZ - merlonD * 0.5f,
-            lengthX, merlonW, merlonH, merlonD, gap, Palette::Stone);
-        for (auto& p : merlons) addDecor(curtainN, p.mesh, p.local);
     }
 
     // ---- South curtain (+Z side): same idea ------------------------------
@@ -180,6 +175,10 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
                    vec3(lengthX, curtainBodyH, outerWallW),
                    vec3(cx, curtainBodyH * 0.5f, outerMidZ),
                    vec3(lengthX * 0.5f, curtainBodyH * 0.5f, outerWallW * 0.5f));
+        auto merlons = Crenellation::AlongX(
+            cx - lengthX * 0.5f, merlonY, outerMidZ + merlonD * 0.5f,
+            lengthX, merlonW, merlonH, merlonD, gap, Palette::Stone);
+        for (auto& p : merlons) addDecor(curtainS, p.mesh, p.local);
         addDecor(curtainS,
                  Primitives::CreateBox(lengthX, corridorT, corridorW,
                                        Palette::Stone),
@@ -189,10 +188,6 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
                    vec3(lengthX, curtainBodyH, innerWallW),
                    vec3(cx, curtainBodyH * 0.5f, innerMidZ),
                    vec3(lengthX * 0.5f, curtainBodyH * 0.5f, innerWallW * 0.5f));
-        auto merlons = Crenellation::AlongX(
-            cx - lengthX * 0.5f, merlonY, outerMidZ + merlonD * 0.5f,
-            lengthX, merlonW, merlonH, merlonD, gap, Palette::Stone);
-        for (auto& p : merlons) addDecor(curtainS, p.mesh, p.local);
     }
 
     // ---- West curtain (-X side), split around the gatehouse ------------
@@ -210,45 +205,51 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
         {
             const float zStart = centreWorld.z - compoundHalfZ;
             const float czMid  = zStart + splitLength * 0.5f;
+            // Outer body
             addSegment(curtainW,
                        vec3(outerWallW, curtainBodyH, splitLength),
                        vec3(outerMidX, curtainBodyH * 0.5f, czMid),
                        vec3(outerWallW * 0.5f, curtainBodyH * 0.5f, splitLength * 0.5f));
+            // Merlons and corridor attached to this outer segment
+            auto merlons = Crenellation::AlongZ(
+                outerMidX - merlonD * 0.5f, merlonY, zStart,
+                splitLength, merlonW, merlonH, merlonD, gap, Palette::Stone);
+            for (auto& p : merlons) addDecor(curtainW, p.mesh, p.local);
             addDecor(curtainW,
                      Primitives::CreateBox(corridorW, corridorT, splitLength,
                                            Palette::Stone),
                      glm::translate(glm::mat4(1.0f),
                          glm::vec3(corridorMidX, corridorY, czMid)));
+            // Inner body
             addSegment(curtainW,
                        vec3(innerWallW, curtainBodyH, splitLength),
                        vec3(innerMidX, curtainBodyH * 0.5f, czMid),
                        vec3(innerWallW * 0.5f, curtainBodyH * 0.5f, splitLength * 0.5f));
-            auto merlons = Crenellation::AlongZ(
-                outerMidX - merlonD * 0.5f, merlonY, zStart,
-                splitLength, merlonW, merlonH, merlonD, gap, Palette::Stone);
-            for (auto& p : merlons) addDecor(curtainW, p.mesh, p.local);
         }
         // South piece (z = +3.75 to z = +compoundHalfZ)
         {
             const float zStart = centreWorld.z + 3.75f;
             const float czMid  = zStart + splitLength * 0.5f;
+            // Outer body
             addSegment(curtainW,
                        vec3(outerWallW, curtainBodyH, splitLength),
                        vec3(outerMidX, curtainBodyH * 0.5f, czMid),
                        vec3(outerWallW * 0.5f, curtainBodyH * 0.5f, splitLength * 0.5f));
+            // Merlons and corridor attached to this outer segment
+            auto merlons = Crenellation::AlongZ(
+                outerMidX - merlonD * 0.5f, merlonY, zStart,
+                splitLength, merlonW, merlonH, merlonD, gap, Palette::Stone);
+            for (auto& p : merlons) addDecor(curtainW, p.mesh, p.local);
             addDecor(curtainW,
                      Primitives::CreateBox(corridorW, corridorT, splitLength,
                                            Palette::Stone),
                      glm::translate(glm::mat4(1.0f),
                          glm::vec3(corridorMidX, corridorY, czMid)));
+            // Inner body
             addSegment(curtainW,
                        vec3(innerWallW, curtainBodyH, splitLength),
                        vec3(innerMidX, curtainBodyH * 0.5f, czMid),
                        vec3(innerWallW * 0.5f, curtainBodyH * 0.5f, splitLength * 0.5f));
-            auto merlons = Crenellation::AlongZ(
-                outerMidX - merlonD * 0.5f, merlonY, zStart,
-                splitLength, merlonW, merlonH, merlonD, gap, Palette::Stone);
-            for (auto& p : merlons) addDecor(curtainW, p.mesh, p.local);
         }
     }
 
@@ -265,6 +266,10 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
                    vec3(outerWallW, curtainBodyH, lengthZ),
                    vec3(outerMidX, curtainBodyH * 0.5f, cz),
                    vec3(outerWallW * 0.5f, curtainBodyH * 0.5f, lengthZ * 0.5f));
+        auto merlons = Crenellation::AlongZ(
+            outerMidX + merlonD * 0.5f, merlonY, cz - lengthZ * 0.5f,
+            lengthZ, merlonW, merlonH, merlonD, gap, Palette::Stone);
+        for (auto& p : merlons) addDecor(curtainE, p.mesh, p.local);
         addDecor(curtainE,
                  Primitives::CreateBox(corridorW, corridorT, lengthZ,
                                        Palette::Stone),
@@ -274,10 +279,6 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
                    vec3(innerWallW, curtainBodyH, lengthZ),
                    vec3(innerMidX, curtainBodyH * 0.5f, cz),
                    vec3(innerWallW * 0.5f, curtainBodyH * 0.5f, lengthZ * 0.5f));
-        auto merlons = Crenellation::AlongZ(
-            outerMidX + merlonD * 0.5f, merlonY, cz - lengthZ * 0.5f,
-            lengthZ, merlonW, merlonH, merlonD, gap, Palette::Stone);
-        for (auto& p : merlons) addDecor(curtainE, p.mesh, p.local);
     }
 
     // ---- Phase 8: corner + gatehouse tower AABBs -----------------------
@@ -348,7 +349,55 @@ bool CompoundCastle::CheckHit(glm::vec3 sphereCentre, float sphereRadius) {
     if (CheckWallSet(curtainS, sphereCentre, sphereRadius)) any = true;
     if (CheckWallSet(curtainW, sphereCentre, sphereRadius)) any = true;
     if (CheckWallSet(curtainE, sphereCentre, sphereRadius)) any = true;
+
+    // Check hit on each of the 6 towers
+    auto checkTower = [&](auto& tower) {
+        if (tower.IsAlive() && tower.CheckHit(sphereCentre, sphereRadius)) {
+            any = true;
+            if (!tower.IsAlive()) {
+                // Drop its solid box so balls fly through
+                glm::vec3 tc = tower.GetCentre();
+                glm::vec3 th = tower.GetHalf();
+                auto it = std::find_if(solidBoxes.begin(), solidBoxes.end(),
+                    [&](const SolidBox& b) {
+                        return glm::distance(b.centre, tc) < 0.1f && glm::distance(b.half, th) < 0.1f;
+                    });
+                if (it != solidBoxes.end()) solidBoxes.erase(it);
+            }
+        }
+    };
+    checkTower(cornerNW);
+    checkTower(cornerNE);
+    checkTower(cornerSW);
+    checkTower(cornerSE);
+    checkTower(gatehouseTower);
+    checkTower(gatehouseTower2);
+
     return any;
+}
+
+bool CompoundCastle::IsTowerAlive(int index) const {
+    switch (index) {
+        case 0: return cornerNW.IsAlive();
+        case 1: return cornerNE.IsAlive();
+        case 2: return cornerSW.IsAlive();
+        case 3: return cornerSE.IsAlive();
+        case 4: return gatehouseTower.IsAlive();
+        case 5: return gatehouseTower2.IsAlive();
+        default: return true;
+    }
+}
+
+bool CompoundCastle::IsFrontWallPieceAlive(int pieceIdx) const {
+    // pieceIdx 0: North piece of front curtain wall (curtainW segment 0)
+    // pieceIdx 1: South piece of front curtain wall (curtainW segment 2)
+    if (pieceIdx == 0 && curtainW.segments.size() > 0) {
+        return curtainW.segments[0].alive;
+    }
+    if (pieceIdx == 1 && curtainW.segments.size() > 2) {
+        return curtainW.segments[2].alive;
+    }
+    return true;
 }
 
 bool CompoundCastle::HitsStatic(glm::vec3 sphereCentre, float sphereRadius) const {
@@ -397,21 +446,17 @@ int CompoundCastle::TotalWallSegmentCount() const {
 }
 
 void CompoundCastle::DrawWallSet(const WallSet& ws, GLuint modelLoc) {
-    // Breakable stone segments first (so the corridor slab + merlons
-    // sit on top of them visually).  Mesh::Draw() is non-const, so the
-    // loop body has to be able to take a non-const reference - the
-    // `WallSet` itself is still const but the segment refs are not.
+    // Draw alive segments and their attached decor (merlons, corridor).
+    // If a segment dies, its decor (upper spokes) is not drawn!
     for (const WallSegment& s : ws.segments) {
         if (!s.alive) continue;
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(s.local));
-        // mesh.Draw() needs a non-const Mesh, but Draw() doesn't
-        // actually mutate it - so cast away const.
         const_cast<Mesh&>(s.mesh).Draw();
-    }
-    // Corridor slabs + merlons (always drawn).
-    for (const Part& p : ws.decor) {
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(p.local));
-        const_cast<Mesh&>(p.mesh).Draw();
+
+        for (const Part& p : s.decor) {
+            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(p.local));
+            const_cast<Mesh&>(p.mesh).Draw();
+        }
     }
 }
 
@@ -448,14 +493,16 @@ void CompoundCastle::Delete() {
     cornerNE.Delete();
     cornerSW.Delete();
     cornerSE.Delete();
-    for (WallSegment& s : curtainN.segments) s.mesh.Delete();
-    for (WallSegment& s : curtainS.segments) s.mesh.Delete();
-    for (WallSegment& s : curtainW.segments) s.mesh.Delete();
-    for (WallSegment& s : curtainE.segments) s.mesh.Delete();
-    for (Part& p : curtainN.decor) p.mesh.Delete();
-    for (Part& p : curtainS.decor) p.mesh.Delete();
-    for (Part& p : curtainW.decor) p.mesh.Delete();
-    for (Part& p : curtainE.decor) p.mesh.Delete();
+    auto deleteWallSet = [](WallSet& ws) {
+        for (WallSegment& s : ws.segments) {
+            s.mesh.Delete();
+            for (Part& p : s.decor) p.mesh.Delete();
+        }
+    };
+    deleteWallSet(curtainN);
+    deleteWallSet(curtainS);
+    deleteWallSet(curtainW);
+    deleteWallSet(curtainE);
     gatehouseTower.Delete();
     gatehouseTower2.Delete();
     gate.Delete();

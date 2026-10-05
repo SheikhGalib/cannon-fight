@@ -9,6 +9,12 @@
 CornerTower::CornerTower(glm::vec3 baseCentre,
                          float side, float bodyH, float parapetH,
                          float merlonW, float gap, float flagpoleH) {
+    centre = glm::vec3(baseCentre.x, bodyH * 0.5f, baseCentre.z);
+    half = glm::vec3(side * 0.5f, bodyH * 0.5f, side * 0.5f);
+    size = glm::vec3(side, bodyH, side);
+    alive = true;
+    health = 1.0f;
+
     const float halfSide = side * 0.5f;
 
     // --- main stone body ------------------------------------------------
@@ -121,7 +127,29 @@ CornerTower::CornerTower(glm::vec3 baseCentre,
     });
 }
 
+bool CornerTower::CheckHit(glm::vec3 sphereCentre, float sphereRadius) {
+    if (!alive) return false;
+    glm::vec3 d(
+        sphereCentre.x - std::fmax(centre.x - half.x, std::fmin(sphereCentre.x, centre.x + half.x)),
+        sphereCentre.y - std::fmax(centre.y - half.y, std::fmin(sphereCentre.y, centre.y + half.y)),
+        sphereCentre.z - std::fmax(centre.z - half.z, std::fmin(sphereCentre.z, centre.z + half.z))
+    );
+    if (glm::dot(d, d) <= sphereRadius * sphereRadius) {
+        health -= 0.20f;
+        float t = glm::clamp(1.0f - health, 0.0f, 1.0f);
+        glm::vec3 newColour = Palette::Stone * (1.0f - t) + Palette::StoneDark * t;
+        parts[0].mesh.Delete();
+        parts[0].mesh = Primitives::CreateBox(size.x, size.y, size.z, newColour);
+        if (health <= 0.0f) {
+            alive = false;
+        }
+        return true;
+    }
+    return false;
+}
+
 void CornerTower::Draw(Shader& shader) {
+    if (!alive) return;
     GLuint modelLoc = glGetUniformLocation(shader.ID, "model");
     for (Part& p : parts) {
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(p.local));

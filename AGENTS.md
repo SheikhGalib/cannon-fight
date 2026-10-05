@@ -209,3 +209,74 @@ short presentation video.
 | `Project1/tools/CaptureSim.cpp` | new — runs the full scene + battle sim and writes per-frame BMPs. |
 | `Project1/tools/encode_video.ps1` | new — ffmpeg wrapper that builds `presentation.mp4` and copies it to `images/`. |
 | `README.md` | Phase 9 section added. |
+
+## Phase 9 (continued) — mountain cloud rings, sky clouds, birds, signal towers, army march
+
+After Phase 9 shipped, the user watched the video and asked for
+three more things: (a) the mountain "ice caps" looked like UFO hats
+so replace them with cloud rings, (b) add clouds and birds in the
+sky, (c) make the army actually march into the castle when the door
+breaks, with the tents out of the way, and (d) fill the max-zoom
+view by extending the river and adding riverside signal towers.
+
+### New files
+| File | Role |
+|---|---|
+| `Project1/SkyClouds.{h,cpp}` | 10 cloud blobs scattered across ±140 m at 28–42 m altitude. Each blob = a body puff + 4–6 satellite spheres, all sharing one low-res `CreateSphere` mesh. `Update(dt)` drifts each cloud along +X and wraps it past ±xSpan so the sky stays populated. |
+| `Project1/Birds.{h,cpp}` | 6 stylised V-shaped birds orbiting on independent horizontal circles (radii 70–110 m, altitudes ~50 m). Each bird is two thin `CreateBox` wings that flap at ~1.7 Hz; the bird's yaw always points along its velocity. `Palette::Bird` (a near-black silhouette) so they read clearly against the bright sky. |
+| `Project1/SignalTower.{h,cpp}` | A small stone watchtower (body + parapet + 4 merlons + conical roof + fire brazier on top). One height parameter so a row of towers can have visual variety. |
+
+### Changes to existing files
+- **`Project1/Scenery.cpp`** — the previous solid-cone "ice caps"
+  that read as UFO hats are gone. Each mountain now gets a ring of
+  7–9 overlapping sphere puffs at ~70 % of its height plus 2–3
+  smaller extras near the top for natural variation. Uses
+  `Palette::Cloud` (a near-white with a faint blue tint).
+- **`Project1/Palette.h`** — added `Cloud` (sky cloud / mountain
+  cloud puffs), `Bird` (dark bird silhouette).
+- **`Project1/Main.cpp`** — wired `SkyClouds`, `Birds`, and a
+  `std::vector<SignalTower>` into creation / Update / Draw /
+  Delete. Cloud band: 28–42 m (lowered from 55–75 m so they're
+  visible from the default camera angle). Army + crew yaw set to
+  180° so they face the castle. Camp tents moved out of the
+  marching path (2×3 cluster on the `-Z` flank at
+  `x ∈ [-21,-17]`, `z ∈ [-28,-16]`). River `sizeZ` bumped from
+  240 to 480 m so it fills the max-zoom view. Signal towers
+  placed at `x ∈ {-16, +8}` (one per river bank), 6 z-positions
+  each at 60 m intervals from -150..+150 (towers near the bridge
+  at `|z|<15` are skipped).  Added the **army march** behaviour:
+  when the door is broken during `Advance`, every surviving army
+  soldier snapshots its current position as `marchStart` and
+  walks toward `marchTarget = (kArmyMarchTargetX=8, ., .)` at
+  2.5 m/s; the formation keeps its column (Z) so it marches in
+  shape. Marching continues through `End` so the final frames show
+  the army inside the castle. `T` (restart) clears
+  `armyMarchStarted`.
+- **`Project1/tools/CaptureSim.cpp`** — mirrors every Main.cpp
+  change so the presentation video reflects the new behaviour.
+  Advance timer raised from 18 → 22 s in Main.cpp, and the capture
+  tool's End-phase grace period raised from 4 → 6 s so the
+  final frames show the army inside the castle.
+
+### Build / video
+- `Project1/makefile` `COMMON` list adds `SkyClouds.cpp`, `Birds.cpp`,
+  `SignalTower.cpp`.
+- `mingw32-make video` rebuilds `capture.exe`, runs the battle
+  sim for the full scripted sequence, encodes
+  `Project1/presentation.mp4` via ffmpeg `libx264`, and copies the
+  result to `images/phase-9-presentation.mp4`. The simulation now
+  ends with the army inside the castle and the gold crest
+  pulsing.
+
+### Phase timeline at a glance
+- **Phase 1**: single cannon + lit shader.
+- **Phase 2**: projectile physics, muzzle spawn, gravity.
+- **Phase 3**: three cannons, `FortGate`, trees, robot target.
+- **Phase 4**: `Castle` composition (FortGate + flanking towers + door + shield).
+- **Phase 5**: cannon recoil, sphere-vs-AABB, door break-physics, orbit camera.
+- **Phase 6**: river, retractable drawbridge + chains, archers, crew, army, selectable cannons (1/2/3/A), delayed firing.
+- **Phase 7**: cannon yaw, muzzle flash, gradual door/brick damage, double curtain walls + corridor, Z-running river, soldier/archer facing, bridge direction fix, README.
+- **Phase 8**: trees removed, soldiers on tower tops, aim trajectory preview, wall-collision, Gouraud shading, day/night, battle sim, gold crest, camp tents, distant mountains/valleys, XYZ coord map, attacker/defender uniform split.
+- **Phase 9**: per-segment wall breakability, bigger mountains pushed to +Z/-Z, trees brought back to safe zones, coord map to bottom-right, battle-sim tightening, `capture.exe` + `presentation.mp4` pipeline.
+- **Phase 9 (continued)**: cloud-ring mountain caps, `SkyClouds` + `Birds` + `SignalTower`, army-march-into-castle behaviour, river extended to 480 m.
+- **Phase 10**: soldier orientation fix (army/crew face castle at yaw 0°), door pillars aligned parallel to door along Z, drawbridge extended across river to opposite bank, merlons/crenellations tied to wall segment life so broken walls leave no floating spokes, towers made breakable with health + darkening + destruction + archer death, wall soldiers added to front western curtains (die when wall segment breaks), Phong shading enabled by default with real-time toggle to Gouraud ('G'), visible Sun/Moon light source in sky with radiant rays, and real-time Ray Tracing shadows ('X'/'Y' toggle) tested against castle AABBs.

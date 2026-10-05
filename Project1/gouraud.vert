@@ -9,18 +9,33 @@ uniform mat4 model;
 uniform mat4 view;
 uniform mat4 proj;
 uniform vec3 lightDir;
+uniform vec3 viewPos;
+uniform float ambientStrength;
+uniform bool isSun;
 
 void main()
 {
-   gl_Position = proj * view * model * vec4(aPos, 1.0);
+   vec4 worldPos = model * vec4(aPos, 1.0);
+   gl_Position = proj * view * worldPos;
 
-   // Phase 8: Gouraud shading - compute the per-vertex diffuse term
-   // here (in the vertex shader) instead of per-fragment.  The lit
-   // colour is interpolated across the triangle, so each pixel gets
-   // a smooth blend of the vertex colours rather than a per-pixel
-   // dot product.
+   if (isSun) {
+       vertColor = aColor;
+       return;
+   }
+
    vec3 normal = normalize(mat3(model) * aNormal);
-   float diffuse = max(dot(normal, -lightDir), 0.0);
-   float brightness = 0.35 + 0.65 * diffuse;
-   vertColor = aColor * brightness;
+   vec3 lDir = normalize(-lightDir);
+
+   float amb = (ambientStrength > 0.0) ? ambientStrength : 0.35;
+   float diff = max(dot(normal, lDir), 0.0);
+
+   vec3 viewDir = normalize(viewPos - worldPos.xyz);
+   vec3 reflectDir = reflect(-lDir, normal);
+   float spec = pow(max(dot(viewDir, reflectDir), 0.0), 16.0);
+
+   vec3 ambient = amb * aColor;
+   vec3 diffuse = (1.0 - amb) * diff * aColor;
+   vec3 specular = 0.20 * spec * vec3(1.0);
+
+   vertColor = ambient + diffuse + specular;
 }

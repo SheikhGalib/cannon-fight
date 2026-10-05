@@ -108,6 +108,13 @@ static mat4 ComputeView() {
     return lookAt(eye, g_cam.target, vec3(0.0f, 1.0f, 0.0f));
 }
 
+static vec3 ComputeCameraPosition() {
+    float cy = cos(g_cam.yaw),  sy = sin(g_cam.yaw);
+    float cp = cos(g_cam.pitch), sp = sin(g_cam.pitch);
+    vec3 dir = vec3(cp * cy, -sp, cp * sy);
+    return g_cam.target - dir * g_cam.radius;
+}
+
 static void ToggleFullscreen(GLFWwindow* window) {
     g_fullscreen = !g_fullscreen;
     if (g_fullscreen) {
@@ -203,7 +210,21 @@ int main() {
 	glfwSetCursorPosCallback(window, OnCursorPos);
 	glfwSetScrollCallback(window, OnScroll);
 
-	Shader shaderProgram("gouraud.vert", "gouraud.frag");
+	// Shaders: Phong (per-fragment Blinn-Phong + ray-traced shadows) and Gouraud (per-vertex).
+	// Phong is active by default. Press 'G' in real time to toggle between them.
+	Shader phongShader("lit.vert", "lit.frag");
+	Shader gouraudShader("gouraud.vert", "gouraud.frag");
+	bool usePhong = true;         // PHONG SHADING BY DEFAULT!
+	bool useRayTracing = true;    // RAY TRACED SHADOWS BY DEFAULT!
+
+	// Light source 3D objects: Sun (day) and Moon (night)
+	Mesh sunCore   = Primitives::CreateSphere(4.5f, 20, 20, Palette::Sun);
+	Mesh sunCorona = Primitives::CreateSphere(7.0f, 16, 16, glm::vec3(1.0f, 0.96f, 0.60f));
+	Mesh moonCore  = Primitives::CreateSphere(4.0f, 20, 20, Palette::Moon);
+	std::vector<Mesh> sunRays;
+	for (int r = 0; r < 8; r++) {
+		sunRays.push_back(Primitives::CreateCylinder(0.25f, 95.0f, 8, glm::vec3(1.0f, 0.94f, 0.50f), /*centered=*/false));
+	}
 
 	Mesh ground = Primitives::CreatePlane(400.0f, 400.0f, Palette::Grass);
 
@@ -247,18 +268,30 @@ int main() {
 	const float halfCompound = 12.0f;
 
 	std::vector<Archer> archers;
-	archers.emplace_back(vec3(12.0f - halfCompound, cornerTowerTopY, 0.0f - halfCompound)); // cornerNW archer
-	archers.emplace_back(vec3(12.0f + halfCompound, cornerTowerTopY, 0.0f - halfCompound)); // cornerNE
-	archers.emplace_back(vec3(12.0f - halfCompound, cornerTowerTopY, 0.0f + halfCompound)); // cornerSW
-	archers.emplace_back(vec3(12.0f + halfCompound, cornerTowerTopY, 0.0f + halfCompound)); // cornerSE
+	archers.emplace_back(vec3(12.0f - halfCompound, cornerTowerTopY, 0.0f - halfCompound)); // cornerNW archer [0]
+	archers.emplace_back(vec3(12.0f + halfCompound, cornerTowerTopY, 0.0f - halfCompound)); // cornerNE archer [1]
+	archers.emplace_back(vec3(12.0f - halfCompound, cornerTowerTopY, 0.0f + halfCompound)); // cornerSW archer [2]
+	archers.emplace_back(vec3(12.0f + halfCompound, cornerTowerTopY, 0.0f + halfCompound)); // cornerSE archer [3]
 	// Gatehouse flanking towers at (x = 0, z = ±3.75).
-	archers.emplace_back(vec3(0.0f, gatehouseTowerTopY, -3.75f));
-	archers.emplace_back(vec3(0.0f, gatehouseTowerTopY,  3.75f));
+	archers.emplace_back(vec3(0.0f, gatehouseTowerTopY, -3.75f));                            // gatehouse NW [4]
+	archers.emplace_back(vec3(0.0f, gatehouseTowerTopY,  3.75f));                            // gatehouse SW [5]
 
 	// Phase 7: archers face the camera (default view is south of the
 	// castle looking toward +Z), so each archer yaws 90° to face +Z.
 	// The gatehouse archers get the same yaw.
 	for (Archer& a : archers) a.SetYaw(90.0f);
+
+	// --- Front curtain wall defenders (Update 4) -----------------------
+	// 4 defender soldiers standing on the front western curtain wall (corridor y = 2.9, x = 0.8):
+	// 2 on the north front wall (z ∈ [-12, -3.75]), 2 on the south front wall (z ∈ [+3.75, +12]).
+	// They look out through the battlements facing the cannons (-X, yaw = 180°).
+	std::vector<Soldier> wallSoldiers;
+	wallSoldiers.emplace_back(vec3(0.8f, 2.9f, -8.5f), Palette::Defender);
+	wallSoldiers.emplace_back(vec3(0.8f, 2.9f, -5.5f), Palette::Defender);
+	wallSoldiers.emplace_back(vec3(0.8f, 2.9f, +5.5f), Palette::Defender);
+	wallSoldiers.emplace_back(vec3(0.8f, 2.9f, +8.5f), Palette::Defender);
+	for (Soldier& s : wallSoldiers) s.SetYaw(180.0f); // face the battlefield (-X)
+	std::vector<bool> wallSoldierAlive(4, true);
 
 	// --- Phase 6: cannon crew + army ---------------------------------
 	// 3 crew (one per cannon) plus 15 army in a 5x3 grid behind the
@@ -282,13 +315,11 @@ int main() {
 		}
 	}
 
-	// Phase 7: army faces the castle door (default 0° yaw already
-	// points them along +X, but make it explicit).  Cannon crew sits
-	// next to the cannon's centre facing the same direction.
-	for (Soldier& s : army) s.SetYaw(180.0f);
-	crewLeft  .SetYaw(180.0f);
-	crewCentre.SetYaw(180.0f);
-	crewRight .SetYaw(180.0f);
+	// Fix 1: army and cannon crew face the castle door (+X, yaw = 0.0f).
+	for (Soldier& s : army) s.SetYaw(0.0f);
+	crewLeft  .SetYaw(0.0f);
+	crewCentre.SetYaw(0.0f);
+	crewRight .SetYaw(0.0f);
 
 	// --- Phase 8: castle interior defenders ----------------------------
 	// A small detachment of defender soldiers (dark blue) standing
@@ -514,13 +545,7 @@ int main() {
 	};
 	mat4 projMatrix = updateProjection();
 
-	GLuint viewLoc = glGetUniformLocation(shaderProgram.ID, "view");
-	GLuint projLoc = glGetUniformLocation(shaderProgram.ID, "proj");
-	GLuint modelLoc = glGetUniformLocation(shaderProgram.ID, "model");
-	GLuint lightDirLoc = glGetUniformLocation(shaderProgram.ID, "lightDir");
-
-	// Phase 8: light direction is recomputed per-frame based on
-	// day/night mode (was a single static value before).
+	// Lighting and shader uniforms are recomputed per-frame on the active shader (Phong / Gouraud).
 
 	const float elevationSpeedDegPerSec = 30.0f;
 	const float driveSpeed = 2.0f;
@@ -601,6 +626,26 @@ int main() {
 		}
 		aPrev = aNow;
 
+		// --- Input: G toggles Phong <-> Gouraud shading in real time (Update 5) ---
+		static bool gPrev = false;
+		bool gNow = glfwGetKey(window, GLFW_KEY_G) == GLFW_PRESS;
+		if (gNow && !gPrev) {
+			usePhong = !usePhong;
+			std::cout << "[Shading Mode] " << (usePhong ? "Phong (Per-Fragment)" : "Gouraud (Per-Vertex)") << std::endl;
+		}
+		gPrev = gNow;
+
+		// --- Input: X or Y toggles Ray Tracing shadows in real time (Update 6) ---
+		static bool xPrev = false, yPrev = false;
+		bool xNow = glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS;
+		bool yNow = glfwGetKey(window, GLFW_KEY_Y) == GLFW_PRESS;
+		if ((xNow && !xPrev) || (yNow && !yPrev)) {
+			useRayTracing = !useRayTracing;
+			std::cout << "[Ray Tracing Shadows] " << (useRayTracing ? "Enabled" : "Disabled") << std::endl;
+		}
+		xPrev = xNow;
+		yPrev = yNow;
+
 		// --- Input: R (HOLD) raises the drawbridge (R for "raise") ------
 		bool rNow = glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS;
 		castle.SetBridgeRaised(rNow);
@@ -615,6 +660,7 @@ int main() {
 			// Reset army march state so a fresh simulation
 			// doesn't immediately resume a previous march.
 			armyMarchStarted = false;
+			std::fill(wallSoldierAlive.begin(), wallSoldierAlive.end(), true);
 		}
 		tPrev = tNow;
 
@@ -946,11 +992,28 @@ int main() {
 				[](const Arrow& a) { return a.IsDead(); }),
 			arrows.end());
 
-		// Replacement: if an archer is dead, promote the next
+		// Update 2: If the front wall breaks, the wall soldiers die!
+		if (!castle.IsFrontWallPieceAlive(0)) {
+			wallSoldierAlive[0] = false;
+			wallSoldierAlive[1] = false;
+		}
+		if (!castle.IsFrontWallPieceAlive(1)) {
+			wallSoldierAlive[2] = false;
+			wallSoldierAlive[3] = false;
+		}
+
+		// Update 3: If a tower breaks, the tower soldier/archer dies!
+		for (size_t ai = 0; ai < archers.size(); ai++) {
+			if (!castle.IsTowerAlive((int)ai)) {
+				archerAlive[ai] = false;
+			}
+		}
+
+		// Replacement: if an archer is dead on an intact tower, promote the next
 		// available defender.  Visual: defender is teleported to the
 		// tower top.
 		for (size_t ai = 0; ai < archers.size(); ai++) {
-			if (archerAlive[ai]) continue;
+			if (archerAlive[ai] || !castle.IsTowerAlive((int)ai)) continue;
 			while (nextReplacementDefender < (int)defenders.size() &&
 			       !defenderAlive[nextReplacementDefender]) ++nextReplacementDefender;
 			if (nextReplacementDefender < (int)defenders.size()) {
@@ -981,15 +1044,92 @@ int main() {
 			             Palette::NightSky.b, 1.0f);
 		}
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		shaderProgram.Activate();
+
+		// Switch between Phong (per-fragment + ray-traced shadows) and Gouraud (per-vertex)
+		Shader& activeShader = usePhong ? phongShader : gouraudShader;
+		activeShader.Activate();
+
+		GLint modelLoc    = glGetUniformLocation(activeShader.ID, "model");
+		GLint viewLoc     = glGetUniformLocation(activeShader.ID, "view");
+		GLint projLoc     = glGetUniformLocation(activeShader.ID, "proj");
+		GLint lightDirLoc = glGetUniformLocation(activeShader.ID, "lightDir");
+		GLint viewPosLoc  = glGetUniformLocation(activeShader.ID, "viewPos");
+		GLint ambStrLoc   = glGetUniformLocation(activeShader.ID, "ambientStrength");
+		GLint isSunLoc    = glGetUniformLocation(activeShader.ID, "isSun");
 
 		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, value_ptr(view));
 		glUniformMatrix4fv(projLoc, 1, GL_FALSE, value_ptr(projMatrix));
+
+		vec3 camPos = ComputeCameraPosition();
+		if (viewPosLoc != -1) {
+			glUniform3fv(viewPosLoc, 1, value_ptr(camPos));
+		}
+
 		// Light direction: low moon in night, high sun in day.
 		vec3 lightDirCurrent = (tod == TimeOfDay::Day)
 			? normalize(vec3(-0.4f, -1.0f, -0.5f))
 			: normalize(vec3(0.6f, -0.2f, -0.4f));
 		glUniform3fv(lightDirLoc, 1, value_ptr(lightDirCurrent));
+
+		float ambStr = (tod == TimeOfDay::Day) ? 0.35f : 0.15f;
+		if (ambStrLoc != -1) {
+			glUniform1f(ambStrLoc, ambStr);
+		}
+		if (isSunLoc != -1) {
+			glUniform1i(isSunLoc, 0);
+		}
+
+		// Upload ray tracing obstacles when using Phong shader
+		if (usePhong) {
+			GLint rtLoc = glGetUniformLocation(activeShader.ID, "useRayTracing");
+			if (rtLoc != -1) glUniform1i(rtLoc, useRayTracing ? 1 : 0);
+
+			const auto& boxes = castle.GetSolidBoxes();
+			int numB = std::min((int)boxes.size(), 36);
+			GLint numBoxesLoc = glGetUniformLocation(activeShader.ID, "numBoxes");
+			if (numBoxesLoc != -1) glUniform1i(numBoxesLoc, numB);
+
+			std::vector<vec3> bMinArr(numB);
+			std::vector<vec3> bMaxArr(numB);
+			for (int bi = 0; bi < numB; bi++) {
+				bMinArr[bi] = boxes[bi].centre - boxes[bi].half;
+				bMaxArr[bi] = boxes[bi].centre + boxes[bi].half;
+			}
+			if (numB > 0) {
+				GLint bMinLoc = glGetUniformLocation(activeShader.ID, "boxMin");
+				GLint bMaxLoc = glGetUniformLocation(activeShader.ID, "boxMax");
+				if (bMinLoc != -1) glUniform3fv(bMinLoc, numB, value_ptr(bMinArr[0]));
+				if (bMaxLoc != -1) glUniform3fv(bMaxLoc, numB, value_ptr(bMaxArr[0]));
+			}
+		}
+
+		// Draw visible light source: Sun with corona & rays (day) or Moon (night)
+		if (isSunLoc != -1) glUniform1i(isSunLoc, 1);
+		vec3 lightSourcePos = kCastleCentre + (-lightDirCurrent * 120.0f);
+		if (tod == TimeOfDay::Day) {
+			mat4 sunMat = translate(mat4(1.0f), lightSourcePos);
+			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(sunMat));
+			sunCore.Draw();
+
+			mat4 coronaMat = translate(mat4(1.0f), lightSourcePos);
+			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(coronaMat));
+			sunCorona.Draw();
+
+			// 8 radiant rays around the sun
+			for (int r = 0; r < 8; r++) {
+				float angle = float(r) * (3.14159265f / 4.0f);
+				mat4 rayMat = translate(mat4(1.0f), lightSourcePos)
+				            * rotate(mat4(1.0f), angle, vec3(0.0f, 0.0f, 1.0f))
+				            * rotate(mat4(1.0f), radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
+				glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(rayMat));
+				sunRays[r].Draw();
+			}
+		} else {
+			mat4 moonMat = translate(mat4(1.0f), lightSourcePos);
+			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(moonMat));
+			moonCore.Draw();
+		}
+		if (isSunLoc != -1) glUniform1i(isSunLoc, 0);
 
 		mat4 groundMatrix = translate(mat4(1.0f), vec3(0.0f, -0.01f, 0.0f));
 		glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(groundMatrix));
@@ -998,67 +1138,73 @@ int main() {
 		// River goes on top of the ground so its surface is visible in
 		// the river footprint. Drawn before the castle so the moat can
 		// still occlude the bits inside the compound.
-		river.Draw(shaderProgram);
+		river.Draw(activeShader);
 
 		// Distant scenery: drawn before the castle so the castle's
 		// towers + walls occlude the parts that fall inside the
 		// compound's footprint (otherwise the mountains visually
 		// "stick through" the castle).
-		scenery.Draw(shaderProgram);
+		scenery.Draw(activeShader);
 
 		// Riverside signal towers: drawn after the scenery so
 		// they sit on top of the grass/water plane, but before
 		// the castle so they don't accidentally occlude it.
-		for (SignalTower& t : signalTowers) t.Draw(shaderProgram);
+		for (SignalTower& t : signalTowers) t.Draw(activeShader);
 
 		// Sky clouds: drift high above the scene; drawn after the
 		// castle so they sit on top of the towers visually (and
 		// don't get occluded by them).
-		skyClouds.Draw(shaderProgram);
+		skyClouds.Draw(activeShader);
 
-		castle.Draw(shaderProgram);
-		robot.Draw(shaderProgram);
+		castle.Draw(activeShader);
+		robot.Draw(activeShader);
 
 		// Archers stand on top of towers - draw after the castle so
 		// they appear in front of any tower silhouette behind them.
-		// Phase 8: skip dead archers.
+		// Skip dead archers (and archers whose towers were destroyed).
 		for (size_t i = 0; i < archers.size(); i++) {
-			if (archerAlive[i]) archers[i].Draw(shaderProgram);
+			if (archerAlive[i]) archers[i].Draw(activeShader);
+		}
+
+		// Front curtain wall defenders (Update 4 and Update 2):
+		// Skip soldiers whose front wall segment collapsed.
+		for (size_t i = 0; i < wallSoldiers.size(); i++) {
+			if (wallSoldierAlive[i]) wallSoldiers[i].Draw(activeShader);
 		}
 
 		// Army in the back.  Phase 8: skip dead army soldiers.
 		for (size_t i = 0; i < army.size(); i++) {
-			if (armyAlive[i]) army[i].Draw(shaderProgram);
+			if (armyAlive[i]) army[i].Draw(activeShader);
 		}
 
 		// Castle interior defenders.  Skip dead ones.
 		for (size_t i = 0; i < defenders.size(); i++) {
-			if (defenderAlive[i]) defenders[i].Draw(shaderProgram);
+			if (defenderAlive[i]) defenders[i].Draw(activeShader);
 		}
 
 		// Camp tents in the distance.
-		for (CampTent& t : tents) t.Draw(shaderProgram);
+		for (CampTent& t : tents) t.Draw(activeShader);
 
 		// Phase 9: trees in the safe zones (sides + back of the
 		// scene).  Drawn after the tents and before the cannons so
 		// the cannon crew / carriage naturally occlude any trees
 		// that drifted into the foreground.
-		for (Tree& t : trees) t.Draw(shaderProgram);
+		for (Tree& t : trees) t.Draw(activeShader);
 
 		// Gold crest inside the castle compound.
-		goldCrest.Draw(shaderProgram);
+		goldCrest.Draw(activeShader);
 
 		// Cannon crew next to their cannons - draw before the cannons
 		// so the cannon carriage hides their legs (they're standing
 		// behind it).
-		crewLeft  .Draw(shaderProgram);
-		crewCentre.Draw(shaderProgram);
-		crewRight .Draw(shaderProgram);
+		crewLeft  .Draw(activeShader);
+		crewCentre.Draw(activeShader);
+		crewRight .Draw(activeShader);
 
 		// Three cannons side by side on the moat-far side.
-		leftCannon  .Draw(shaderProgram);
-		centreCannon.Draw(shaderProgram);
-		rightCannon .Draw(shaderProgram);
+		leftCannon  .Draw(activeShader);
+		centreCannon.Draw(activeShader);
+		rightCannon .Draw(activeShader);
 
 		// Visual feedback for selected cannons: a thin yellow parabolic
 		// arc + a marker at the predicted hit point.  Phase 8 replaces
@@ -1146,25 +1292,20 @@ int main() {
 		}
 
 		for (Projectile& ball : projectiles) {
-			ball.Draw(shaderProgram);
+			ball.Draw(activeShader);
 		}
 
 		// Phase 8: arrows in flight (only used during battle sim).
-		for (Arrow& a : arrows) a.Draw(shaderProgram);
+		for (Arrow& a : arrows) a.Draw(activeShader);
 
 		// Phase 9 (extra): birds circling overhead.  Drawn late so
 		// they sit on top of the sky background (no z-fighting
 		// issues because they're small + far above the scene).
-		birds.Draw(shaderProgram);
+		birds.Draw(activeShader);
 
 		// Phase 9: XYZ coordinate map as a SIDE panel in the
-		// bottom-right corner.  The bottom-left corner was getting
-		// crowded, so Phase 9 moves the gizmo to the right side of
-		// the screen with a clear label and a larger axis gizmo so
-		// it actually reads as a "side" indicator.  Drawn LAST (no
-		// depth test) so it sits on top of everything else.  We
-		// disable depth test, draw the three coloured axes in
-		// screen space, then re-enable depth test.
+		// bottom-right corner.  Drawn LAST (no depth test) so it sits
+		// on top of everything else.
 		glDisable(GL_DEPTH_TEST);
 		static Mesh coordX = Primitives::CreateCylinder(0.05f, 1.4f, 6,
 		                                                glm::vec3(0.90f, 0.20f, 0.20f),
@@ -1188,6 +1329,7 @@ int main() {
 		                                          /*centered=*/false);
 		int fbw, fbh; glfwGetFramebufferSize(window, &fbw, &fbh);
 		if (fbw > 0 && fbh > 0) {
+			if (isSunLoc != -1) glUniform1i(isSunLoc, 1);
 			// Overlay in screen space with an ortho projection.
 			mat4 hudView = mat4(1.0f);
 			mat4 hudProj = ortho(0.0f, float(fbw), 0.0f, float(fbh),
@@ -1260,9 +1402,7 @@ int main() {
 			}
 
 			// A small label strip below the gizmo so the player
-			// knows what they're looking at.  We don't have fonts,
-			// so a small white cube stack at the gizmo origin does
-			// the job visually (a "marker" for the panel anchor).
+			// knows what they're looking at.
 			static Mesh anchor = Primitives::CreateSphere(0.10f, 8, 8,
 			                                              glm::vec3(1.0f, 1.0f, 1.0f));
 			mat4 hudMa = translate(mat4(1.0f), vec3(cx, cy, 0.0f));
@@ -1272,6 +1412,7 @@ int main() {
 			// Restore the regular view/proj for the next frame.
 			glUniformMatrix4fv(viewLoc, 1, GL_FALSE, value_ptr(view));
 			glUniformMatrix4fv(projLoc, 1, GL_FALSE, value_ptr(projMatrix));
+			if (isSunLoc != -1) glUniform1i(isSunLoc, 0);
 		}
 		glEnable(GL_DEPTH_TEST);
 
@@ -1286,6 +1427,7 @@ int main() {
 	rightCannon.Delete();
 	castle.Delete();
 	for (Archer& a : archers) a.Delete();
+	for (Soldier& s : wallSoldiers) s.Delete();
 	crewLeft.Delete();
 	crewCentre.Delete();
 	crewRight.Delete();
@@ -1301,7 +1443,12 @@ int main() {
 	robot.Delete();
 	for (Projectile& ball : projectiles) ball.Delete();
 	for (Arrow& a : arrows) a.Delete();
-	shaderProgram.Delete();
+	sunCore.Delete();
+	sunCorona.Delete();
+	moonCore.Delete();
+	for (Mesh& m : sunRays) m.Delete();
+	phongShader.Delete();
+	gouraudShader.Delete();
 
 	glfwDestroyWindow(window);
 	glfwTerminate();

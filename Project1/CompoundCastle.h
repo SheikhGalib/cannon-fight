@@ -82,15 +82,23 @@ public:
     int AliveWallSegmentCount() const;
     int TotalWallSegmentCount() const;
 
+    // Solid AABBs for collision and ray-traced shadows
+    struct SolidBox {
+        glm::vec3 centre;
+        glm::vec3 half;
+    };
+    const std::vector<SolidBox>& GetSolidBoxes() const { return solidBoxes; }
+
+    // Tower alive queries (0=NW, 1=NE, 2=SW, 3=SE, 4=GatehouseTower1, 5=GatehouseTower2)
+    bool IsTowerAlive(int index) const;
+
+    // Front curtain wall piece alive queries (0=North piece z<0, 1=South piece z>0)
+    bool IsFrontWallPieceAlive(int pieceIdx) const;
+
     void Draw(Shader& shader);
     void Delete();
 
 private:
-    // Phase 9: each breakable curtain-wall stone segment carries its
-    // own health.  Lives parallel to the static parts in
-    // `curtain{N,S,W,E}` - we keep the merlons / corridor slabs as
-    // non-breakable Parts and only the OUTER + INNER stone bodies
-    // become segments.
     struct WallSegment {
         Mesh        mesh;
         glm::mat4   local;
@@ -100,10 +108,10 @@ private:
                                    // mesh when the colour darkens)
         bool        alive = true;
         float       health = 1.0f;
+        std::vector<Part> decor;   // merlons / corridor on top of this segment (disappear when segment dies)
     };
     struct WallSet {
-        std::vector<WallSegment> segments;       // breakable stone bodies
-        std::vector<Part>        decor;          // corridor slabs + merlons
+        std::vector<WallSegment> segments; // breakable stone bodies with attached decor
     };
 
     // Phase 9: damage every alive wall segment in `ws` that the
@@ -132,15 +140,6 @@ private:
     WallSet curtainW;
     WallSet curtainE;
 
-    // Phase 8: AABBs for every solid wall segment. Used by CheckHit()
-    // so cannonballs stop on contact with the stone (instead of
-    // passing through). Each entry is (centreX, centreY, centreZ,
-    // halfX, halfY, halfZ) in world space.  Phase 9: rebuilt as
-    // wall segments die.
-    struct SolidBox {
-        glm::vec3 centre;
-        glm::vec3 half;
-    };
     std::vector<SolidBox> solidBoxes;
 
     // Moat water + bridge.

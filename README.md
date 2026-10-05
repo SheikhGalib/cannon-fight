@@ -23,6 +23,8 @@ Built with **MinGW-w64 + GLFW 3.5.1 + GLAD + GLM**, with a hand-written Makefile
 | **W / S**              | Elevate the active cannon's barrel up / down        |
 | `Space`                | Fire every selected cannon that's currently idle       |
 | `R` (hold)             | Raise / lower the drawbridge                        |
+| `G`                    | Toggle **Phong ↔ Gouraud** shading in real time     |
+| `X` / `Y`              | Toggle **Ray Tracing shadows** on / off             |
 | `N`                    | Toggle **day / night**                              |
 | `B`                    | Start the **battle simulation**                     |
 | `P`                    | Pause / resume the battle simulation               |

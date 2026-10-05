@@ -37,11 +37,21 @@ public:
           float gap,         // gap between merlons
           float flagpoleH);  // height of the thin flagpole above the merlons
 
+    bool CheckHit(glm::vec3 sphereCentre, float sphereRadius);
+    bool IsAlive() const { return alive; }
+    glm::vec3 GetCentre() const { return centre; }
+    glm::vec3 GetHalf() const { return half; }
+
     void Draw(Shader& shader);
     void Delete();
 
 private:
     std::vector<Part> parts;
+    glm::vec3 centre;
+    glm::vec3 half;
+    glm::vec3 size;
+    bool alive = true;
+    float health = 1.0f;
 };
 
 #endif

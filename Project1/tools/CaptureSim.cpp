@@ -170,6 +170,21 @@ int main() {
     archers.emplace_back(vec3(0.0f, gatehouseTowerTopY,  3.75f));
     for (Archer& a : archers) a.SetYaw(90.0f);
 
+    std::vector<Soldier> wallSoldiers;
+    wallSoldiers.emplace_back(vec3(0.8f, 2.9f, -8.5f), Palette::Defender);
+    wallSoldiers.emplace_back(vec3(0.8f, 2.9f, -5.5f), Palette::Defender);
+    wallSoldiers.emplace_back(vec3(0.8f, 2.9f, +5.5f), Palette::Defender);
+    wallSoldiers.emplace_back(vec3(0.8f, 2.9f, +8.5f), Palette::Defender);
+    for (Soldier& s : wallSoldiers) s.SetYaw(180.0f);
+    std::vector<bool> wallSoldierAlive(4, true);
+
+    Mesh sunCore   = Primitives::CreateSphere(4.5f, 20, 20, Palette::Sun);
+    Mesh sunCorona = Primitives::CreateSphere(7.0f, 16, 16, glm::vec3(1.0f, 0.96f, 0.60f));
+    std::vector<Mesh> sunRays;
+    for (int r = 0; r < 8; r++) {
+        sunRays.push_back(Primitives::CreateCylinder(0.25f, 95.0f, 8, glm::vec3(1.0f, 0.94f, 0.50f), /*centered=*/false));
+    }
+
     const float crewZOffset = -0.7f;
     Soldier crewLeft (vec3(cannonX - 1.8f, 0.0f,  cannonSpacing + crewZOffset), Palette::Attacker);
     Soldier crewCentre(vec3(cannonX - 1.8f, 0.0f,  0.0f + crewZOffset),       Palette::Attacker);
@@ -530,9 +545,26 @@ int main() {
                       [](const Arrow& a) { return a.IsDead(); }),
             arrows.end());
 
-        // Replacement: archer dies -> defender walks up to take its place.
+        // Update 2: If front wall segment breaks, front wall soldiers die
+        if (!castle.IsFrontWallPieceAlive(0)) {
+            wallSoldierAlive[0] = false;
+            wallSoldierAlive[1] = false;
+        }
+        if (!castle.IsFrontWallPieceAlive(1)) {
+            wallSoldierAlive[2] = false;
+            wallSoldierAlive[3] = false;
+        }
+
+        // Update 3: If a tower breaks, the tower archer dies
         for (size_t ai = 0; ai < archers.size(); ai++) {
-            if (archerAlive[ai]) continue;
+            if (!castle.IsTowerAlive((int)ai)) {
+                archerAlive[ai] = false;
+            }
+        }
+
+        // Replacement: archer dies on intact tower -> defender walks up to take its place.
+        for (size_t ai = 0; ai < archers.size(); ai++) {
+            if (archerAlive[ai] || !castle.IsTowerAlive((int)ai)) continue;
             while (nextReplacementDefender < (int)defenders.size() &&
                    !defenderAlive[nextReplacementDefender]) ++nextReplacementDefender;
             if (nextReplacementDefender < (int)defenders.size()) {
@@ -564,6 +596,28 @@ int main() {
             : normalize(vec3(0.6f, -0.2f, -0.4f));
         glUniform3fv(lightDirLoc, 1, value_ptr(lightDir));
 
+        // Draw Sun and radiant rays
+        GLint isSunLoc = glGetUniformLocation(shaderProgram.ID, "isSun");
+        if (isSunLoc != -1) glUniform1i(isSunLoc, 1);
+        vec3 lightSourcePos = camTarget + (-lightDir * 120.0f);
+        mat4 sunMat = translate(mat4(1.0f), lightSourcePos);
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(sunMat));
+        sunCore.Draw();
+
+        mat4 coronaMat = translate(mat4(1.0f), lightSourcePos);
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(coronaMat));
+        sunCorona.Draw();
+
+        for (int r = 0; r < 8; r++) {
+            float angle = float(r) * (3.14159265f / 4.0f);
+            mat4 rayMat = translate(mat4(1.0f), lightSourcePos)
+                        * rotate(mat4(1.0f), angle, vec3(0.0f, 0.0f, 1.0f))
+                        * rotate(mat4(1.0f), radians(90.0f), vec3(1.0f, 0.0f, 0.0f));
+            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(rayMat));
+            sunRays[r].Draw();
+        }
+        if (isSunLoc != -1) glUniform1i(isSunLoc, 0);
+
         mat4 groundMatrix = translate(mat4(1.0f), vec3(0.0f, -0.01f, 0.0f));
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(groundMatrix));
         ground.Draw();
@@ -575,6 +629,8 @@ int main() {
         robot.Draw(shaderProgram);
         for (size_t i = 0; i < archers.size(); i++)
             if (archerAlive[i]) archers[i].Draw(shaderProgram);
+        for (size_t i = 0; i < wallSoldiers.size(); i++)
+            if (wallSoldierAlive[i]) wallSoldiers[i].Draw(shaderProgram);
         for (size_t i = 0; i < army.size(); i++)
             if (armyAlive[i]) army[i].Draw(shaderProgram);
         for (size_t i = 0; i < defenders.size(); i++)
@@ -623,6 +679,7 @@ int main() {
     rightCannon.Delete();
     castle.Delete();
     for (Archer& a : archers) a.Delete();
+    for (Soldier& s : wallSoldiers) s.Delete();
     crewLeft.Delete();
     crewCentre.Delete();
     crewRight.Delete();
@@ -637,6 +694,9 @@ int main() {
     goldCrest.Delete();
     for (Projectile& b : projectiles) b.Delete();
     for (Arrow& a : arrows) a.Delete();
+    sunCore.Delete();
+    sunCorona.Delete();
+    for (Mesh& m : sunRays) m.Delete();
     shaderProgram.Delete();
 
     glfwDestroyWindow(window);

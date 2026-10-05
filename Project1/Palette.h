@@ -49,6 +49,8 @@ namespace Palette {
     inline const glm::vec3 Arrow     (0.20f, 0.15f, 0.08f);  // wooden arrow shaft
     inline const glm::vec3 Shield    (0.55f, 0.45f, 0.15f);  // brass/wood shield face
     inline const glm::vec3 Bird      (0.10f, 0.08f, 0.08f);  // bird silhouette
+    inline const glm::vec3 Sun       (1.00f, 0.92f, 0.40f);  // bright sun sphere / corona
+    inline const glm::vec3 Moon      (0.88f, 0.92f, 1.00f);  // cool night moon sphere
 
 }
 

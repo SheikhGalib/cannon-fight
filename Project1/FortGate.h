@@ -37,7 +37,8 @@ public:
     // rows        : how many brick rows between the pillars.
     FortGate(glm::vec3 centreWorld,
              float width, float height, float depth,
-             float gateWidth, int rows);
+             float gateWidth, int rows,
+             bool alongZ = true);
 
     // Sphere-vs-AABB against the breakable bricks. Same idea as Wall.
     bool CheckHit(glm::vec3 sphereCentre, float sphereRadius);
