@@ -315,6 +315,21 @@ key); fire is edge-triggered (one ball per press).}
 \texttt{Project1/FortGate.cpp/.h} & (Phase 3) Medieval front-of-fort: non-breakable stone
                                      pillars + wooden lintel plus two breakable brick stacks
                                      flanking a doorway. \\
+\texttt{Project1/Crenellation.h}  & (Phase 4) Namespace with \texttt{AlongX} / \texttt{AlongZ}
+                                     helpers: each returns a \texttt{vector<Part>} of
+                                     evenly-spaced merlons for a crenellated parapet or
+                                     curtain wall. \\
+\texttt{Project1/Tower.cpp/.h}    & (Phase 4) Square stone tower: body, four corner quoins,
+                                     four arrow-slit windows, four crenellated parapet
+                                     edges, flagpole and flag on top. \\
+\texttt{Project1/Door.cpp/.h}     & (Phase 4) Two independent breakable wooden door panels
+                                     filling a doorway, with decorative plank strips on the
+                                     outward face. \\
+\texttt{Project1/Castle.cpp/.h}   & (Phase 4) Top-level composition: two flanking \texttt{Tower}s,
+                                     the \texttt{FortGate} brick stacks in between, two
+                                     \texttt{Door} panels, two crenellated curtain walls,
+                                     and a drawbridge.  Dispatches \texttt{CheckHit} to doors
+                                     first, then brick stacks. \\
 \texttt{Project1/Tree.cpp/.h}     & (Phase 3) Cylinder trunk + cone leaves, drawn relative to one
                                      base translation. \\
 \texttt{Project1/Robot.cpp/.h}    & (Phase 3) Wooden dummy --- cube body/head + cylinder
@@ -325,7 +340,8 @@ key); fire is edge-triggered (one ball per press).}
                                      \texttt{Main.cpp} + \texttt{COMMON} into a self-contained
                                      \texttt{app.exe} (no \texttt{libstdc++-6.dll}). \\
 \texttt{Project1/tools/}          & Throwaway screenshot tools (\texttt{CapturePhase2.cpp},
-                                     \texttt{CapturePhase3.cpp}, \texttt{CapturePhase3Overview.cpp}).
+                                     \texttt{CapturePhase3.cpp}, \texttt{CapturePhase3Overview.cpp},
+                                     \texttt{CapturePhase4.cpp}, \texttt{CapturePhase4Overview.cpp}).
                                      Not part of the game, never added to the \texttt{Makefile}. \\
 \bottomrule
 \end{tabular}
@@ -689,6 +705,86 @@ Three things change in Phase 3:
   \label{fig:p3capture}
 \end{figure}
 
+\subsubsection*{Phase 4: a Disney-style castle with breakable wooden doors}
+
+Phase~3's flat wall becomes a full castle composition.  Four new pieces of
+code and one bug fix:
+
+\begin{enumerate}[itemsep=1pt,topsep=2pt]
+  \item \textbf{Crenellation (namespace).}  A pair of helpers
+        \texttt{AlongX(...)} and \texttt{AlongZ(...)} each take a length and
+        merlon dimensions and return a \texttt{vector<Part>} of evenly-spaced
+        merlons.  A loop computes the count as
+        $\lfloor L / (W + G) \rfloor$ where $W$ is merlon width and $G$ is
+        the gap between merlons; the resulting Parts are laid along the
+        requested axis with the requested depth.  No state, no class --
+        just a builder function.  Reused for tower parapets (four
+        per tower) and for both curtain walls.
+  \item \textbf{Tower.}  A square stone tower built as one
+        \texttt{std::vector<Part>}: a \texttt{body} box, four darker
+        \texttt{quoin} boxes on the corners (using \texttt{Palette::DarkIron}
+        for the slightly-darker stone colour), four \texttt{arrow slit}
+        boxes (one per face, using \texttt{Palette::Bore} so they read as
+        recessed openings), four edges of crenellation from
+        \texttt{Crenellation::AlongX} and \texttt{AlongZ}, a thin
+        \texttt{flagpole} (\texttt{Palette::Iron}) and a flat
+        \texttt{flag} (\texttt{Palette::Wood}, the brown standing in for a
+        red banner).
+  \item \textbf{Door.}  Two independent breakable wooden panels meeting at
+        the doorway centre.  Each panel is a thin box ($1\times 3\times
+        0.10$ m) with a few decorative horizontal plank strips on the
+        outward face.  \texttt{CheckHit} does sphere-vs-AABB against each
+        panel independently so a ball aimed at the left side kills only the
+        left panel; the right one survives until hit.
+  \item \textbf{Castle.}  The top-level composition owns the two
+        \texttt{Tower}s, the \texttt{FortGate} (still sandwiched between
+        the towers), the two \texttt{Door} panels (drawn \emph{after} the
+        gate so they appear in front of the brick stacks), two
+        crenellated curtain walls extending $6$ m out from each tower,
+        and a small wooden drawbridge in front of the doorway.
+        \texttt{CheckHit} dispatches to doors first then bricks.
+\end{enumerate}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{phase4_overview}
+  \caption{Phase 4 overview: three cannons (left), a full castle with two
+  flanking towers, two crenellated curtain walls, two wooden door panels
+  in the gate opening, a drawbridge in front, and six trees behind.}
+  \label{fig:p4overview}
+\end{figure}
+
+\paragraph{A sphere-vs-AABB bug.}
+Phase 2 / 3's hit test computed the closest-point-on-AABB correctly as the
+clamped offset, but then used that clamped offset \emph{itself} as the
+distance, instead of subtracting it from the raw sphere-to-centre offset.
+That gave the wrong answer when the sphere centre lay \emph{inside} the
+box: the clamp was a no-op and the "distance" became the distance from
+the sphere to the box centre, not zero.  The bug was invisible against
+the Phase~3 brick stacks (thick bricks; balls clipped a corner and got
+counted) and lethal against Phase~4's thin door panels ($0.10$ m
+thick): the ball would visibly fly straight through a panel without
+breaking it.  The fix is two lines:
+
+\begin{lstlisting}[language={[11]C++}]
+glm::vec3 offset   = sphereCentre - centre;     // sphere offset from box centre
+glm::vec3 clamped  = glm::clamp(offset, -half, +half);
+glm::vec3 delta    = offset - clamped;          // sphere-to-closest-point vector
+if (glm::dot(delta, delta) <= sphereRadius * sphereRadius) { /* hit */ }
+\end{lstlisting}
+
+The same fix is applied to \texttt{FortGate::CheckHit}; \texttt{Wall}'s
+(now-deleted) version had the same bug.  With the fix, balls passing
+through the interior of any AABB register as hits as expected.
+
+\paragraph{Trajectory re-tuning.}
+Phase~3's default elevation of $12^\circ$ lands the ball short of
+$\bm{X}=12$ m (range $\approx 8.1$ m).  With the new 3 m-high door in the
+way, an $18^\circ$ shot (range $\approx 12.0$ m at $v_0 = 14$ m/s) lands
+squarely on it.  \texttt{Main.cpp} calls \texttt{centreCannon.Elevate(6.0f)}
+once at startup to add the extra $6^\circ$; the two flankers stay at the
+default $12^\circ$ for visual symmetry.
+
 \subsection{How the muzzle world position is computed}
 
 The interesting moment of the whole program is the line in \texttt{Main.cpp}
@@ -850,6 +946,28 @@ After 2s: alive wall bricks = 15 (out of 16), live balls = 0
 \end{lstlisting}
 One brick dead (the visible hole in Fig.~\ref{fig:p3capture}, left
 stack), no balls in flight (both balls have hit the ground or the bricks).
+
+\subsection{Phase 4: the door actually breaks}
+
+\texttt{CapturePhase4.cpp} ticks the simulation $2$~seconds with three
+auto-fired shots and prints
+\begin{lstlisting}[language=bash]
+After 2s: alive door panels = 0 (out of 2), alive bricks = 9 (out of 16), live balls = 0
+\end{lstlisting}
+Both door panels broken, seven bricks broken, no balls in flight.  The
+sphere-vs-AABB fix is what made the doors breakable --- without it the
+panels were too thin for the test to register.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{phase4_capture}
+  \caption{Phase 4 after three auto-fired balls at $18^\circ$ elevation.
+  Both wooden door panels are gone, leaving the gate's doorway wide
+  open; the brick stacks to either side have visible chunks missing
+  (the back row on the right is still intact, which is correct --- the
+  trajectory went over them).}
+  \label{fig:p4capture}
+\end{figure}
 
 \subsection{Build verification}
 
