@@ -10,6 +10,7 @@
 #include "CornerTower.h"
 #include "Water.h"
 #include "Bridge.h"
+#include "Mesh.h"
 #include "shaderClass.h"
 
 // A full compound castle: 4 corner towers + 4 curtain walls + 1 main
@@ -36,6 +37,14 @@
 // The main gatehouse is centred on the -X face of the compound (facing
 // the cannons), so its centre is at `(centreWorld.x - halfCompound, 0,
 // centreWorld.z)`.
+//
+// Phase 9: each curtain-wall stone body (outer + inner wall) is now a
+// breakable segment with its own health pool.  Cannonballs strip 10 %
+// per hit; at 0 the segment is removed.  Towers, the door, the
+// FortGate bricks, the corridor floor, the gatehouse towers, the
+// pillars and the lintel remain non-breakable (they use the existing
+// `HitsStatic` / `solidBoxes` machinery so cannonballs still stop on
+// contact rather than pass through).
 class CompoundCastle {
 public:
     CompoundCastle(glm::vec3 centreWorld,
@@ -48,13 +57,15 @@ public:
                    float cornerSide     = 4.0f,
                    float cornerHeight   = 8.0f);
 
-    // Same breakability interface as Phase 4's Castle.
+    // Same breakability interface as Phase 4's Castle.  Also damages
+    // the breakable curtain-wall segments added in Phase 9.
     bool CheckHit(glm::vec3 sphereCentre, float sphereRadius);
 
     // Phase 8: sphere-vs-static-AABB collision against every solid
     // (non-breakable) wall / tower. Returns true if the sphere is in
     // contact with any of them.  Cannonballs use this to stop on the
-    // stone rather than pass through it.
+    // stone rather than pass through it.  Includes the still-alive
+    // curtain-wall segments so a partially-broken wall still blocks.
     bool HitsStatic(glm::vec3 sphereCentre, float sphereRadius) const;
 
     // Phase 5+: advance any detached door panels one frame (integrates
@@ -67,11 +78,42 @@ public:
     int TotalDoorPanelCount() const;
     int AliveBrickCount() const;
     int TotalBrickCount() const;
+    // Phase 9: counts of breakable curtain-wall segments.
+    int AliveWallSegmentCount() const;
+    int TotalWallSegmentCount() const;
 
     void Draw(Shader& shader);
     void Delete();
 
 private:
+    // Phase 9: each breakable curtain-wall stone segment carries its
+    // own health.  Lives parallel to the static parts in
+    // `curtain{N,S,W,E}` - we keep the merlons / corridor slabs as
+    // non-breakable Parts and only the OUTER + INNER stone bodies
+    // become segments.
+    struct WallSegment {
+        Mesh        mesh;
+        glm::mat4   local;
+        glm::vec3   centre;        // world-space centre (for sphere-vs-AABB)
+        glm::vec3   half;          // world-space half-extents
+        glm::vec3   size;          // box dimensions (used to rebuild the
+                                   // mesh when the colour darkens)
+        bool        alive = true;
+        float       health = 1.0f;
+    };
+    struct WallSet {
+        std::vector<WallSegment> segments;       // breakable stone bodies
+        std::vector<Part>        decor;          // corridor slabs + merlons
+    };
+
+    // Phase 9: damage every alive wall segment in `ws` that the
+    // sphere touches.  Also drops the dead segment's solidBox so
+    // cannonballs can fly through the gap.
+    bool CheckWallSet(WallSet& ws, glm::vec3 sphereCentre, float sphereRadius);
+
+    // Phase 9: draw all alive segments + decor for a single wall.
+    void DrawWallSet(const WallSet& ws, GLuint modelLoc);
+
     // Main gatehouse pieces (Phase 4's Castle composition, here on the
     // -X face of the compound).
     Door      doors;
@@ -85,23 +127,16 @@ private:
     CornerTower cornerSW;          // (-X, +Z)
     CornerTower cornerSE;          // (+X, +Z)
 
-    // Curtain walls: each is one big box + a top merlon row.
-    std::vector<Part> curtainN;
-    std::vector<Part> curtainS;
-    std::vector<Part> curtainW;
-    std::vector<Part> curtainE;
-
-    // Curtain-wall merlon counts (cached so DrawPartRange-style helpers
-    // aren't needed - each wall is just drawn wholesale).
-    int curtainNMerlons = 0;
-    int curtainSMerlons = 0;
-    int curtainWMerlons = 0;
-    int curtainEMerlons = 0;
+    WallSet curtainN;
+    WallSet curtainS;
+    WallSet curtainW;
+    WallSet curtainE;
 
     // Phase 8: AABBs for every solid wall segment. Used by CheckHit()
     // so cannonballs stop on contact with the stone (instead of
     // passing through). Each entry is (centreX, centreY, centreZ,
-    // halfX, halfY, halfZ) in world space.
+    // halfX, halfY, halfZ) in world space.  Phase 9: rebuilt as
+    // wall segments die.
     struct SolidBox {
         glm::vec3 centre;
         glm::vec3 half;

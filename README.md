@@ -100,6 +100,8 @@ mingw32-make            # compile to build_mingw\app.exe
 mingw32-make run        # build + run
 mingw32-make clean      # delete build_mingw\app.exe
 mingw32-make shots      # regenerate the docs/code-walkthrough.md images
+mingw32-make capture    # build capture.exe (Phase 9 video tool)
+mingw32-make video      # run capture.exe then ffmpeg -> presentation.mp4
 ```
 
 Run the binary from inside `Project1/` (so the shaders load via relative path):
@@ -145,3 +147,28 @@ Run the binary from inside `Project1/` (so the shaders load via relative path):
   auto-replacement. Gold crest inside the castle with defenders. Camp tents behind the
   army. Distant mountain + valley scenery. XYZ coordinate map. Distinct attacker
   (dark red) / defender (dark blue) uniforms.
+* **Phase 9** — Wall breakability: every curtain-wall stone segment now has its own
+  health pool; cannonballs strip 10 % per hit and darken the segment; at 0 it disappears
+  and cannonballs fly through the gap.  Mountains are bigger (20..35 m) and clustered
+  on the +Z / -Z sides of the scene (not a uniform ring).  Trees are back, but only in
+  the safe zones (sides + back of the scene); the fight zone rectangle between the
+  cannons and the castle stays clear.  XYZ coordinate map moved from the bottom-left
+  corner to a side panel in the bottom-right corner.  Battle simulation tightened:
+  cannons auto-fire during the Advance phase, the door-broken event ends the fight
+  early, the Defending phase ends early if either side is wiped out.  A
+  `tools/CaptureSim.cpp` capture tool runs the full scene + battle sim and saves
+  per-frame BMPs; `tools/encode_video.ps1` (ffmpeg) combines them into
+  `presentation.mp4` for the project presentation.
+
+## Phase 9 video
+
+The `make capture` + `make video` pipeline produces a short
+presentation video from the running battle simulation:
+
+```powershell
+cd Project1
+mingw32-make video    # builds capture.exe, runs it, then ffmpeg -> presentation.mp4
+```
+
+The output is also copied to `images/phase-9-presentation.mp4` for
+the project layout.

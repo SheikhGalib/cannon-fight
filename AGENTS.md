@@ -146,3 +146,66 @@ hand-written, no external engine code.
 - `Project1/makefile` — added the 4 new `.cpp` files to `COMMON`.
 - `Project1/` `Tree.{h,cpp}` were removed (and the `Tree.cpp` entry dropped from the Makefile) — the user asked for the trees to be deleted in this phase.
 - `.gitignore` and `README.md` updated for Phase 8.
+
+## Phase 9 — wall breakability, bigger mountains, trees in safe zones, side coord map, capture tool, refined sim
+
+Phase 9 is the "make it feel real + recordable" pass.  The user gave
+clear feedback after watching the Phase 8 video: the mountains looked
+weak / scattered, walls didn't break (only the door did), the XYZ
+coordinate map was in the wrong corner, the trees had been over-removed,
+and the battle simulation needed tightening.  They also asked for a
+short presentation video.
+
+### Changes
+- **Wall breakability** — every breakable curtain-wall stone body
+  (outer + inner of the N/S/E/W curtains) is now a `WallSegment`
+  with its own health.  Each cannonball hit strips 10 % of the
+  health; the segment's mesh is rebuilt at a darker shade; at 0 the
+  segment is removed and its `SolidBox` is dropped so future
+  cannonballs fly through the gap.  `CompoundCastle::CheckHit`
+  delegates to a new private `CheckWallSet` helper.
+- **Bigger mountains pushed to the sides** — `Scenery.cpp` no longer
+  distributes mountains uniformly on a noisy ring.  Heights are now
+  20..35 m (was 8..15 m) and the angle is biased through a `sin^2`
+  power curve so density clusters at the +Z and -Z flanks and on the
+  +X (back-of-castle) side.  The -X (cannon side) is the least
+  weighted so the fight zone stays visible.
+- **Trees brought back, but only in the safe zones** — the Phase 8
+  tree removal was over-broad.  Phase 9 scatters ~70 trees in a wide
+  ring around the scene but EXPLICITLY excludes the fight zone
+  rectangle `x ∈ [-22, 8]`, `z ∈ [-15, 15]` (covers the cannons,
+  army, tents, river, moat, gatehouse).  `Tree.cpp` was already
+  on disk from Phase 3; it was just dropped from the Makefile in
+  Phase 8.  Phase 9 re-adds it to `COMMON` and instantiates a
+  `std::vector<Tree>` in `Main.cpp`.
+- **XYZ coordinate map moves to a side panel** — was in the
+  bottom-left corner; now sits in the bottom-right corner with a
+  larger axis gizmo, tip cones on each axis, and a small anchor
+  sphere at the panel origin.  The angle-from-+Y formula
+  (`atan2(dx, dy)`) is used for the diagonal +Z axis.
+- **Battle simulation choreography** — `Defending` now ends early
+  if either side is wiped out, `Advance` ends when the door is
+  broken (not just at the 15 s timeout), and the cannons AUTO-FIRE
+  during `Advance` (one Idle cannon per 1.2 s) so the attackers
+  actually break through.  The winner is decided by `doorBroken &&
+  (livingAttackers > 0)`.
+- **Capture tool** — `tools/CaptureSim.cpp` is a new executable
+  (`mingw32-make capture`) that runs the full Phase 9 scene, skips
+  the Inactive pause, plays the whole battle sim, and saves
+  `capture/frame_NNNNN.bmp` at 30 fps for up to 60 s.  Combine the
+  frames with `mingw32-make video` (or
+  `powershell -File tools/encode_video.ps1`); ffmpeg produces
+  `presentation.mp4` (also copied to `../images/phase-9-presentation.mp4`
+  for the project layout).
+- **README** updated for Phase 9.
+
+### Files changed / added
+| File | What changed |
+|---|---|
+| `Project1/CompoundCastle.{h,cpp}` | refactored curtain walls into `WallSet { segments, decor }`; added per-segment health + darken-on-hit + drop-on-death; `CheckWallSet` + `DrawWallSet` member helpers; new `AliveWallSegmentCount` / `TotalWallSegmentCount` accessors. |
+| `Project1/Scenery.cpp` | mountains now 20..35 m, clustered on the +Z / -Z sides via `sin^2` weighting. |
+| `Project1/Main.cpp` | re-added tree scatter (70 trees, fight zone excluded); moved coord map to bottom-right; refined battle sim (early-exit on wipe, door-broken end, auto-fire during Advance); added `cannonAutoFireTimer` + `cannonAutoFirePeriod`. |
+| `Project1/makefile` | added `Tree.cpp` back to `COMMON`; added `capture` and `video` targets. |
+| `Project1/tools/CaptureSim.cpp` | new — runs the full scene + battle sim and writes per-frame BMPs. |
+| `Project1/tools/encode_video.ps1` | new — ffmpeg wrapper that builds `presentation.mp4` and copies it to `images/`. |
+| `README.md` | Phase 9 section added. |

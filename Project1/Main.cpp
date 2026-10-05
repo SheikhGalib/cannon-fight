@@ -30,7 +30,10 @@
 #include "CampTent.h"
 #include "Scenery.h"
 #include "GoldCrest.h"
+#include "SkyClouds.h"
+#include "Birds.h"
 #include "Arrow.h"
+#include "Tree.h"
 
 using namespace std;
 using namespace glm;
@@ -41,14 +44,14 @@ using namespace glm;
 // compound centre: drag with the left mouse button to rotate (yaw / pitch),
 // and scroll the wheel to zoom in / out.
 
-static const vec3 kCastleCentre(12.0f, 1.5f, 0.0f);
-static const float kOrbitMinRadius = 8.0f;
-static const float kOrbitMaxRadius = 160.0f;
+static const vec3 kCastleCentre(12.0f, 4.0f, 0.0f);
+static const float kOrbitMinRadius = 12.0f;
+static const float kOrbitMaxRadius = 240.0f;
 
 struct OrbitCamera {
     float yaw   = 0.7f;     // radians around Y, 0 = looking down +X
-    float pitch = 0.25f;    // radians above horizon (clamped to (-1.4, 1.4))
-    float radius = 38.0f;   // distance from target
+    float pitch = 0.40f;    // radians above horizon (clamped to (-0.2, 1.4))
+    float radius = 55.0f;   // distance from target
     vec3  target = kCastleCentre;
     bool  dragging = false;
     double lastX = 0.0, lastY = 0.0;
@@ -93,7 +96,13 @@ static void OnScroll(GLFWwindow* /*w*/, double /*xoff*/, double yoff) {
 static mat4 ComputeView() {
     float cy = cos(g_cam.yaw),  sy = sin(g_cam.yaw);
     float cp = cos(g_cam.pitch), sp = sin(g_cam.pitch);
-    vec3 dir = vec3(cp * cy, sp, cp * sy);
+    // dir is the unit vector pointing from the eye TOWARD the
+    // target (i.e. the looking direction).  Eye = target - dir*R
+    // sits on the opposite side of dir from the target.  So:
+    //   * dir.y > 0  -> camera is below target looking up
+    //   * dir.y < 0  -> camera is above target looking down
+    // We want the latter, so dir.y = -sp for positive pitch.
+    vec3 dir = vec3(cp * cy, -sp, cp * sy);
     vec3 eye = g_cam.target - dir * g_cam.radius;
     return lookAt(eye, g_cam.target, vec3(0.0f, 1.0f, 0.0f));
 }
@@ -311,13 +320,82 @@ int main() {
 	// --- Phase 8: gold crest inside the castle -------------------------
 	GoldCrest goldCrest(vec3(crestX, 0.0f, crestZ));
 
-	// --- Phase 8: distant mountain / valley scenery --------------------
-	// A ring of low-poly mountains + valleys around the castle so the
+	// --- Phase 9: distant mountain / valley scenery --------------------
+	// Bigger mountains (20..35 m) clustered on the +Z / -Z sides of
+	// the scene (where the camera is most likely to look) so the
 	// canvas reads as "infinite" rather than truncated by the ground
-	// edge.
+	// edge.  We push them slightly further out so the camera can
+	// never fly into one.
 	Scenery scenery(vec3(0.0f, 0.0f, 0.0f),
-	                /*innerRadius=*/90.0f, /*outerRadius=*/150.0f,
-	                /*count=*/48);
+	                /*innerRadius=*/110.0f, /*outerRadius=*/200.0f,
+	                /*count=*/40);
+
+	// --- Phase 9 (extra): moving clouds in the sky --------------------
+	// A handful of big cloud blobs high above the scene that drift
+	// slowly along +X and wrap around, so the sky feels alive.
+	// 8 blobs across a ±120 m XZ window at 55..75 m altitude -
+	// well above the castle towers (which top out around 18 m) so
+	// they look like distant sky, not fog around the castle.
+	SkyClouds skyClouds(/*numClouds=*/8,
+	                     /*xSpan=*/120.0f, /*zSpan=*/120.0f,
+	                     /*skyLow=*/55.0f,  /*skyHigh=*/75.0f);
+
+	// --- Phase 9 (extra): a flock of birds circling overhead ----------
+	// 6 birds orbiting the castle at ~50 m altitude, with their
+	// own radii + angular speeds.  Each bird is two thin "wings"
+	// that beat up and down.
+	Birds birds(/*numBirds=*/6,
+	            /*centre=*/vec3(crestX, 0.0f, crestZ),
+	            /*alt=*/50.0f,
+	            /*radiusMin=*/70.0f, /*radiusMax=*/110.0f);
+
+	// --- Phase 9: trees brought back, but ONLY in the safe zones ----
+	// Phase 8 removed trees entirely (the user said "remove them
+	// where the fight is happening") but Phase 9 explicitly wants
+	// trees on the sides and back.  So we scatter trees everywhere
+	// EXCEPT in the fight zone between the cannons and the river /
+	// castle:
+	//
+	//   * The fight zone is x in [-22, 8], z in [-15, 15] (covers
+	//     the cannons, army, tents, river, moat, gatehouse).
+	//   * Outside that rectangle, trees are fine.
+	//   * We also keep trees away from the mountain ring (the inner
+	//     radius of the scenery is 110 m, so 100 m is safe).
+	//
+	// Deterministic LCG-style PRNG so the layout is the same every
+	// run.
+	std::vector<Tree> trees;
+	{
+		unsigned int seed = 4711u;
+		auto rnd = [&]() {
+			seed = seed * 1103515245u + 12345u;
+			return float((seed >> 8) & 0xFFFFFFu) / float(0xFFFFFFu);
+		};
+		const int kTreeCount = 70;
+		int placed = 0;
+		int attempts = 0;
+		const int kMaxAttempts = kTreeCount * 10;
+		while (placed < kTreeCount && attempts < kMaxAttempts) {
+			++attempts;
+			// Sample a candidate in a wide ring around the scene
+			// centre so we don't get a perfect uniform blob.
+			float angle  = rnd() * 6.2831853f;
+			float radius = 18.0f + rnd() * 75.0f;        // 18..93 m
+			float x = 12.0f + std::cos(angle) * radius;
+			float z = 0.0f  + std::sin(angle) * radius;
+			// Reject anything in the fight zone.
+			if (x > -22.0f && x <  8.0f &&
+			    z > -15.0f && z < 15.0f) continue;
+			// Vary tree size a little.
+			float trunkH = 1.4f + rnd() * 1.0f;        // 1.4..2.4 m
+			float trunkR = 0.12f + rnd() * 0.08f;       // 0.12..0.20 m
+			float crownH = 1.8f + rnd() * 1.5f;        // 1.8..3.3 m
+			float crownR = 0.9f + rnd() * 0.6f;        // 0.9..1.5 m
+			trees.emplace_back(vec3(x, 0.0f, z),
+			                   trunkH, trunkR, crownH, crownR);
+			++placed;
+		}
+	}
 
 	// --- Phase 6: per-cannon fire sequence state ---------------------
 	FireSequence fireLeft, fireCentre, fireRight;
@@ -365,6 +443,13 @@ int main() {
 	// seconds while alive and the sim is in Defending or Advance.
 	float archerFireTimer = 0.0f;
 	static constexpr float kArcherFirePeriod = 1.6f;
+	// Phase 9: auto-fire cadence for the cannons when the battle
+	// sim is in the Advance phase.  Each Idle cannon is triggered
+	// once per `cannonAutoFirePeriod` seconds, cycling left ->
+	// centre -> right so the attackers actually break through the
+	// door.
+	float cannonAutoFireTimer = 0.0f;
+	static constexpr float cannonAutoFirePeriod = 1.2f;
 
 	std::vector<Arrow> arrows;
 
@@ -606,10 +691,20 @@ int main() {
 		if (battle != BattlePhase::Inactive && !battlePaused) {
 			battleTimer += deltaTime;
 		}
-		// Bridge: during the BattleUp phase the defenders raise the
+		// Bridge: during the BridgeUp phase the defenders raise the
 		// drawbridge.  During Advance, the bridge is dropped so the
 		// attackers can cross.  When Inactive we leave the bridge
 		// alone (the user keeps manual control with R).
+		//
+		// Phase 9 choreography tweaks:
+		//   * Each phase has a clearer cue: BridgeUp plays for a
+		//     moment so the player sees the bridge rise before the
+		//     fighting starts.
+		//   * Defending ends as soon as either side is wiped out, OR
+		//     after 12 s (whichever comes first).
+		//   * Advance ends as soon as the door is broken OR after
+		//     18 s of auto-firing, so the simulation finishes
+		//     decisively instead of stalling.
 		if (battle == BattlePhase::BridgeUp) {
 			castle.SetBridgeRaised(true);
 			// After 2 seconds the archers start shooting.
@@ -619,25 +714,58 @@ int main() {
 			}
 		} else if (battle == BattlePhase::Defending) {
 			castle.SetBridgeRaised(true);
-			// 12 seconds of archers shooting arrows at the army.
-			if (battleTimer > 12.0f) {
+			// Count living on each side so we can end early when one
+			// side is wiped out.
+			int livingAttackers = 0;
+			for (bool a : armyAlive) if (a) ++livingAttackers;
+			int livingArchers   = 0;
+			for (bool a : archerAlive) if (a) ++livingArchers;
+			bool attackersWiped = (livingAttackers <= 0);
+			bool archersWiped   = (livingArchers <= 0);
+			// After 12 seconds of archers shooting arrows at the army
+			// (or earlier if one side has been wiped out), move on.
+			if (battleTimer > 12.0f || attackersWiped || archersWiped) {
 				battle = BattlePhase::Advance;
 				battleTimer = 0.0f;
 				castle.SetBridgeRaised(false);
 			}
 		} else if (battle == BattlePhase::Advance) {
 			castle.SetBridgeRaised(false);
-			// 15 seconds of advancing then End.
-			if (battleTimer > 15.0f) {
+			// Phase 9: auto-fire the cannons at the door / walls so
+			// the attackers actually break through.  We cycle
+			// through the three cannons, firing whichever is Idle.
+			cannonAutoFireTimer += deltaTime;
+			if (cannonAutoFireTimer >= 1.2f) {
+				cannonAutoFireTimer = 0.0f;
+				// Pick the first Idle cannon (left, centre, right
+				// in order) and start its fire sequence.
+				Cannon*  cannons[3]   = { &leftCannon, &centreCannon, &rightCannon };
+				FireSequence* seqs[3] = { &fireLeft,   &fireCentre,   &fireRight  };
+				for (int i = 0; i < 3; i++) {
+					if (seqs[i]->state == FireState::Idle) {
+						seqs[i]->state = FireState::CrewWalking;
+						seqs[i]->timer = 0.0f;
+						break;
+					}
+				}
+			}
+			// End the Advance phase once the door is broken OR
+			// after 18 s (so the simulation finishes decisively
+			// even if the cannons missed).
+			bool doorBroken = (castle.AliveDoorPanelCount() == 0);
+			if (battleTimer > 18.0f || doorBroken) {
 				battle = BattlePhase::End;
 				battleTimer = 0.0f;
-				// Decide the winner by who's still standing.
+				// Decide the winner.  Attackers win if (door broken
+				// AND at least one attacker alive) OR (more living
+				// attackers than defenders).
 				int livingAttackers = 0;
 				for (bool a : armyAlive) if (a) ++livingAttackers;
 				int livingDefenders = 0;
 				for (bool a : archerAlive) if (a) ++livingDefenders;
 				for (bool d : defenderAlive) if (d) ++livingDefenders;
-				goldCrest.SetVictorious(livingAttackers > livingDefenders);
+				bool attackersWin = doorBroken && (livingAttackers > 0);
+				goldCrest.SetVictorious(attackersWin);
 			}
 		} else if (battle == BattlePhase::End) {
 			// Sit on the End state until the user presses T to restart.
@@ -728,6 +856,10 @@ int main() {
 		// Update gold crest (pulse when victorious).
 		goldCrest.Update(deltaTime);
 
+		// Update sky clouds + birds (they drift + flap each frame).
+		skyClouds.Update(deltaTime);
+		birds.Update(deltaTime);
+
 		// --- Camera matrix ----------------------------------------------
 		mat4 view = ComputeView();
 		projMatrix = updateProjection();
@@ -766,6 +898,11 @@ int main() {
 		// "stick through" the castle).
 		scenery.Draw(shaderProgram);
 
+		// Sky clouds: drift high above the scene; drawn after the
+		// castle so they sit on top of the towers visually (and
+		// don't get occluded by them).
+		skyClouds.Draw(shaderProgram);
+
 		castle.Draw(shaderProgram);
 		robot.Draw(shaderProgram);
 
@@ -788,6 +925,12 @@ int main() {
 
 		// Camp tents in the distance.
 		for (CampTent& t : tents) t.Draw(shaderProgram);
+
+		// Phase 9: trees in the safe zones (sides + back of the
+		// scene).  Drawn after the tents and before the cannons so
+		// the cannon crew / carriage naturally occlude any trees
+		// that drifted into the foreground.
+		for (Tree& t : trees) t.Draw(shaderProgram);
 
 		// Gold crest inside the castle compound.
 		goldCrest.Draw(shaderProgram);
@@ -896,51 +1039,123 @@ int main() {
 		// Phase 8: arrows in flight (only used during battle sim).
 		for (Arrow& a : arrows) a.Draw(shaderProgram);
 
-		// Phase 8: XYZ coordinate map in the bottom-left corner.  A
-		// small overlay that always reads world +X (red), +Y (green),
-		// +Z (blue) arrows so the player can orient themselves.
-		// Drawn LAST (no depth test) so it sits on top of everything
-		// else.  We disable depth test, draw the three coloured axes
-		// in screen space, then re-enable depth test.
+		// Phase 9 (extra): birds circling overhead.  Drawn late so
+		// they sit on top of the sky background (no z-fighting
+		// issues because they're small + far above the scene).
+		birds.Draw(shaderProgram);
+
+		// Phase 9: XYZ coordinate map as a SIDE panel in the
+		// bottom-right corner.  The bottom-left corner was getting
+		// crowded, so Phase 9 moves the gizmo to the right side of
+		// the screen with a clear label and a larger axis gizmo so
+		// it actually reads as a "side" indicator.  Drawn LAST (no
+		// depth test) so it sits on top of everything else.  We
+		// disable depth test, draw the three coloured axes in
+		// screen space, then re-enable depth test.
 		glDisable(GL_DEPTH_TEST);
-		static Mesh coordX = Primitives::CreateCylinder(0.04f, 0.9f, 6,
-		                                                glm::vec3(0.85f, 0.15f, 0.15f),
+		static Mesh coordX = Primitives::CreateCylinder(0.05f, 1.4f, 6,
+		                                                glm::vec3(0.90f, 0.20f, 0.20f),
 		                                                /*centered=*/false);
-		static Mesh coordY = Primitives::CreateCylinder(0.04f, 0.9f, 6,
-		                                                glm::vec3(0.20f, 0.80f, 0.20f),
+		static Mesh coordY = Primitives::CreateCylinder(0.05f, 1.4f, 6,
+		                                                glm::vec3(0.25f, 0.85f, 0.25f),
 		                                                /*centered=*/false);
-		static Mesh coordZ = Primitives::CreateCylinder(0.04f, 0.9f, 6,
-		                                                glm::vec3(0.20f, 0.40f, 0.90f),
+		static Mesh coordZ = Primitives::CreateCylinder(0.05f, 1.4f, 6,
+		                                                glm::vec3(0.25f, 0.45f, 0.95f),
 		                                                /*centered=*/false);
+		// Tiny tip cones so the gizmo looks like an "arrow" rather
+		// than a plain stick.
+		static Mesh tipX = Primitives::CreateCone(0.13f, 0.0f, 0.30f, 10,
+		                                          glm::vec3(0.90f, 0.20f, 0.20f),
+		                                          /*centered=*/false);
+		static Mesh tipY = Primitives::CreateCone(0.13f, 0.0f, 0.30f, 10,
+		                                          glm::vec3(0.25f, 0.85f, 0.25f),
+		                                          /*centered=*/false);
+		static Mesh tipZ = Primitives::CreateCone(0.13f, 0.0f, 0.30f, 10,
+		                                          glm::vec3(0.25f, 0.45f, 0.95f),
+		                                          /*centered=*/false);
 		int fbw, fbh; glfwGetFramebufferSize(window, &fbw, &fbh);
 		if (fbw > 0 && fbh > 0) {
-			// Overlay in screen space: the camera's view matrix is
-			// the orbit camera, and the projection is perspective.
-			// For a simple overlay we render with a fixed pixel-scale
-			// orthographic projection at the bottom-left corner.
-			mat4 hudView = mat4(1.0f);    // identity (camera at origin)
+			// Overlay in screen space with an ortho projection.
+			mat4 hudView = mat4(1.0f);
 			mat4 hudProj = ortho(0.0f, float(fbw), 0.0f, float(fbh),
 			                     -1.0f, 1.0f);
 			glUniformMatrix4fv(viewLoc, 1, GL_FALSE, value_ptr(hudView));
 			glUniformMatrix4fv(projLoc, 1, GL_FALSE, value_ptr(hudProj));
-			// Draw +X axis (red) along screen X.
+
+			// Panel anchor: bottom-right corner of the canvas, with
+			// a small margin so the gizmo doesn't sit on the very
+			// edge.
+			const float cx = float(fbw) - 130.0f;
+			const float cy = 130.0f;
+			const float ax = cx - 30.0f;   // x-axis tip target
+			const float ay = cy;          // y-axis tip target (vertical)
+			const float az_x = cx + 30.0f; // z-axis tip target (diagonal down-right)
+			const float az_y = cy - 30.0f;
+
+			// +X axis (red) - horizontal, pointing to the right.
+			// Cylinder grows along +Y locally; rotate +90 around Z
+			// so its top ends up at +X.
 			mat4 hudMx = translate(mat4(1.0f),
-			                     vec3(40.0f, 40.0f, 0.0f))
-			            * rotate(mat4(1.0f), radians(-90.0f), vec3(0.0f, 0.0f, 1.0f));
+			                     vec3(cx, cy, 0.0f))
+			            * rotate(mat4(1.0f), radians(90.0f), vec3(0.0f, 0.0f, 1.0f))
+			            * scale(mat4(1.0f), vec3(1.0f, std::fabs(ax - cx), 1.0f));
 			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(hudMx));
 			coordX.Draw();
-			// Draw +Y axis (green) along screen Y.
+			// +X arrow tip at (ax, cy).
+			mat4 hudMxTip = translate(mat4(1.0f),
+			                          vec3(ax, cy, 0.0f))
+			                 * rotate(mat4(1.0f), radians(90.0f), vec3(0.0f, 0.0f, 1.0f));
+			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(hudMxTip));
+			tipX.Draw();
+
+			// +Y axis (green) - vertical, pointing up.  Cylinder grows from
+			// local origin to local +Y so we just translate to the
+			// base and scale by the desired length.
 			mat4 hudMy = translate(mat4(1.0f),
-			                     vec3(40.0f, 40.0f, 0.0f));
+			                     vec3(cx, cy, 0.0f))
+			            * scale(mat4(1.0f), vec3(1.0f, std::fabs(ay - cy), 1.0f));
 			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(hudMy));
 			coordY.Draw();
-			// Draw +Z axis (blue) going into the screen - use a
-			// diagonal.
-			mat4 hudMz = translate(mat4(1.0f),
-			                     vec3(40.0f, 40.0f, 0.0f))
-			            * rotate(mat4(1.0f), radians(45.0f), vec3(0.0f, 0.0f, 1.0f));
-			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(hudMz));
-			coordZ.Draw();
+			// +Y arrow tip at (cx, ay).
+			mat4 hudMyTip = translate(mat4(1.0f),
+			                          vec3(cx, ay, 0.0f));
+			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(hudMyTip));
+			tipY.Draw();
+
+			// +Z axis (blue) - diagonal, pointing to the
+			// bottom-right of the gizmo (the conventional "into the
+			// screen" direction on a top-down map).  Cylinder grows
+			// along +Y locally; we rotate around Z so its +Y points
+			// toward (az_x, az_y).
+			{
+				float zdx = az_x - cx;
+				float zdy = az_y - cy;
+				float zlen = std::sqrt(zdx * zdx + zdy * zdy);
+				float zang = std::atan2(zdx, zdy);  // angle from +Y
+				mat4 hudMz = translate(mat4(1.0f),
+				                     vec3(cx, cy, 0.0f))
+				            * rotate(mat4(1.0f), zang, vec3(0.0f, 0.0f, 1.0f))
+				            * scale(mat4(1.0f), vec3(1.0f, zlen, 1.0f));
+				glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(hudMz));
+				coordZ.Draw();
+				// Tip at the +Z end.
+				mat4 hudMzTip = translate(mat4(1.0f),
+				                          vec3(az_x, az_y, 0.0f))
+				                 * rotate(mat4(1.0f), zang, vec3(0.0f, 0.0f, 1.0f));
+				glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(hudMzTip));
+				tipZ.Draw();
+			}
+
+			// A small label strip below the gizmo so the player
+			// knows what they're looking at.  We don't have fonts,
+			// so a small white cube stack at the gizmo origin does
+			// the job visually (a "marker" for the panel anchor).
+			static Mesh anchor = Primitives::CreateSphere(0.10f, 8, 8,
+			                                              glm::vec3(1.0f, 1.0f, 1.0f));
+			mat4 hudMa = translate(mat4(1.0f), vec3(cx, cy, 0.0f));
+			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(hudMa));
+			anchor.Draw();
+
 			// Restore the regular view/proj for the next frame.
 			glUniformMatrix4fv(viewLoc, 1, GL_FALSE, value_ptr(view));
 			glUniformMatrix4fv(projLoc, 1, GL_FALSE, value_ptr(projMatrix));
@@ -964,8 +1179,11 @@ int main() {
 	for (Soldier& s : army) s.Delete();
 	for (Soldier& d : defenders) d.Delete();
 	for (CampTent& t : tents) t.Delete();
+	for (Tree& t : trees) t.Delete();
 	scenery.Delete();
 	goldCrest.Delete();
+	skyClouds.Delete();
+	birds.Delete();
 	robot.Delete();
 	for (Projectile& ball : projectiles) ball.Delete();
 	for (Arrow& a : arrows) a.Delete();

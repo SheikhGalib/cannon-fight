@@ -5,6 +5,22 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glad/glad.h>
+#include <algorithm>
+#include <cmath>
+
+using glm::vec3;
+
+// Phase 9: damage-per-hit tuning for curtain-wall segments.  A direct
+// cannon-ball hit strips 10 % of a segment's health; at 0 the segment
+// is removed and its solidBox is dropped so cannonballs fly through
+// the gap.  Each hit rebuilds the segment's mesh at a darker shade so
+// cumulative damage is visible.
+static const float kWallSegmentDamagePerHit = 0.10f;
+
+static glm::vec3 WallSegmentDamageColour(float health) {
+    float t = glm::clamp(1.0f - health, 0.0f, 1.0f);
+    return Palette::Stone * (1.0f - t) + Palette::StoneDark * t;
+}
 
 CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
                                float gateWidth,
@@ -76,16 +92,15 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
 {
     // ----- curtain walls --------------------------------------------------
     // The compound is `2 * compoundHalfX` long along X and `2 *
-    // compoundHalfZ` long along Z.  Each curtain wall has a stone body
-    // (one big box) plus a row of merlons on top (Crenellation).
+    // compoundHalfZ` long along Z.  Each curtain wall has an OUTER
+    // stone body (Phase 9: breakable), a CORRIDOR floor slab (always
+    // present, non-breakable), and an INNER stone body (Phase 9:
+    // breakable).  Merlons on top are also non-breakable.
     //
     // The gatehouse sits on the WEST (-X) face, so the western curtain
     // wall (x = -compoundHalfX) is split into two pieces straddling the
     // gatehouse footprint: from z = -compoundHalfZ to z = -3.75, and
     // from z = +3.75 to z = +compoundHalfZ.
-    // Phase 7: each curtain wall is now THREE side-by-side pieces
-    // (outer body + corridor floor + inner body).  Merlons sit on top
-    // of the outer wall only.
     const float curtainBodyH = wallHeight;
     const float merlonH = 0.50f;
     const float merlonW = 0.45f;
@@ -98,6 +113,28 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
     const float corridorT  = 0.10f;              // corridor slab thickness
     const float corridorY  = wallHeight - corridorT;
 
+    // Local helper: push a breakable stone segment + remember its
+    // solidBox.  `size` is the full box size; `localMid` is the world
+    // centre of the segment.
+    auto addSegment = [&](WallSet& ws, glm::vec3 size, glm::vec3 localMid,
+                          glm::vec3 half) {
+        ws.segments.push_back({
+            Primitives::CreateBox(size.x, size.y, size.z, Palette::Stone),
+            glm::translate(glm::mat4(1.0f), localMid),
+            localMid,
+            half,
+            size,
+            true,
+            1.0f
+        });
+        solidBoxes.push_back({ localMid, half });
+    };
+    // Local helper: push a non-breakable decor piece (corridor slab
+    // or merlon).
+    auto addDecor = [&](WallSet& ws, Mesh mesh, glm::mat4 local) {
+        ws.decor.push_back({ mesh, local });
+    };
+
     // ---- North curtain (-Z side): x ∈ [-compoundHalfX, +compoundHalfX] --
     // Outer face stays at cz - 0.7 (matches the old single-wall face).
     {
@@ -108,33 +145,26 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
         const float outerMidZ  = outerFaceZ + outerWallW * 0.5f;
         const float corridorMidZ = outerFaceZ + outerWallW + corridorW * 0.5f;
         const float innerMidZ  = outerFaceZ + outerWallW + corridorW + innerWallW * 0.5f;
-        curtainN.push_back({
-            Primitives::CreateBox(lengthX, curtainBodyH, outerWallW, Palette::Stone),
-            glm::translate(glm::mat4(1.0f),
-                glm::vec3(cx, curtainBodyH * 0.5f, outerMidZ))
-        });
-        curtainN.push_back({
-            Primitives::CreateBox(lengthX, corridorT, corridorW, Palette::Stone),
-            glm::translate(glm::mat4(1.0f),
-                glm::vec3(cx, corridorY, corridorMidZ))
-        });
-        curtainN.push_back({
-            Primitives::CreateBox(lengthX, curtainBodyH, innerWallW, Palette::Stone),
-            glm::translate(glm::mat4(1.0f),
-                glm::vec3(cx, curtainBodyH * 0.5f, innerMidZ))
-        });
-        // Phase 8: cache AABB so cannonballs can collide with this
-        // wall (outer + inner bodies only; the thin corridor floor
-        // slab is treated as part of the inner wall).
-        solidBoxes.push_back({ glm::vec3(cx, curtainBodyH * 0.5f, outerMidZ),
-                                glm::vec3(lengthX * 0.5f, curtainBodyH * 0.5f, outerWallW * 0.5f) });
-        solidBoxes.push_back({ glm::vec3(cx, curtainBodyH * 0.5f, innerMidZ),
-                                glm::vec3(lengthX * 0.5f, curtainBodyH * 0.5f, innerWallW * 0.5f) });
+        // Outer body (breakable).
+        addSegment(curtainN,
+                   vec3(lengthX, curtainBodyH, outerWallW),
+                   vec3(cx, curtainBodyH * 0.5f, outerMidZ),
+                   vec3(lengthX * 0.5f, curtainBodyH * 0.5f, outerWallW * 0.5f));
+        // Corridor slab (non-breakable).
+        addDecor(curtainN,
+                 Primitives::CreateBox(lengthX, corridorT, corridorW,
+                                       Palette::Stone),
+                 glm::translate(glm::mat4(1.0f),
+                     glm::vec3(cx, corridorY, corridorMidZ)));
+        // Inner body (breakable).
+        addSegment(curtainN,
+                   vec3(lengthX, curtainBodyH, innerWallW),
+                   vec3(cx, curtainBodyH * 0.5f, innerMidZ),
+                   vec3(lengthX * 0.5f, curtainBodyH * 0.5f, innerWallW * 0.5f));
         auto merlons = Crenellation::AlongX(
             cx - lengthX * 0.5f, merlonY, outerMidZ - merlonD * 0.5f,
             lengthX, merlonW, merlonH, merlonD, gap, Palette::Stone);
-        curtainNMerlons = (int)merlons.size();
-        for (auto& p : merlons) curtainN.push_back(std::move(p));
+        for (auto& p : merlons) addDecor(curtainN, p.mesh, p.local);
     }
 
     // ---- South curtain (+Z side): same idea ------------------------------
@@ -146,30 +176,23 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
         const float outerMidZ  = outerFaceZ - outerWallW * 0.5f;
         const float corridorMidZ = outerFaceZ - outerWallW - corridorW * 0.5f;
         const float innerMidZ  = outerFaceZ - outerWallW - corridorW - innerWallW * 0.5f;
-        curtainS.push_back({
-            Primitives::CreateBox(lengthX, curtainBodyH, outerWallW, Palette::Stone),
-            glm::translate(glm::mat4(1.0f),
-                glm::vec3(cx, curtainBodyH * 0.5f, outerMidZ))
-        });
-        curtainS.push_back({
-            Primitives::CreateBox(lengthX, corridorT, corridorW, Palette::Stone),
-            glm::translate(glm::mat4(1.0f),
-                glm::vec3(cx, corridorY, corridorMidZ))
-        });
-        curtainS.push_back({
-            Primitives::CreateBox(lengthX, curtainBodyH, innerWallW, Palette::Stone),
-            glm::translate(glm::mat4(1.0f),
-                glm::vec3(cx, curtainBodyH * 0.5f, innerMidZ))
-        });
-        solidBoxes.push_back({ glm::vec3(cx, curtainBodyH * 0.5f, outerMidZ),
-                                glm::vec3(lengthX * 0.5f, curtainBodyH * 0.5f, outerWallW * 0.5f) });
-        solidBoxes.push_back({ glm::vec3(cx, curtainBodyH * 0.5f, innerMidZ),
-                                glm::vec3(lengthX * 0.5f, curtainBodyH * 0.5f, innerWallW * 0.5f) });
+        addSegment(curtainS,
+                   vec3(lengthX, curtainBodyH, outerWallW),
+                   vec3(cx, curtainBodyH * 0.5f, outerMidZ),
+                   vec3(lengthX * 0.5f, curtainBodyH * 0.5f, outerWallW * 0.5f));
+        addDecor(curtainS,
+                 Primitives::CreateBox(lengthX, corridorT, corridorW,
+                                       Palette::Stone),
+                 glm::translate(glm::mat4(1.0f),
+                     glm::vec3(cx, corridorY, corridorMidZ)));
+        addSegment(curtainS,
+                   vec3(lengthX, curtainBodyH, innerWallW),
+                   vec3(cx, curtainBodyH * 0.5f, innerMidZ),
+                   vec3(lengthX * 0.5f, curtainBodyH * 0.5f, innerWallW * 0.5f));
         auto merlons = Crenellation::AlongX(
             cx - lengthX * 0.5f, merlonY, outerMidZ + merlonD * 0.5f,
             lengthX, merlonW, merlonH, merlonD, gap, Palette::Stone);
-        curtainSMerlons = (int)merlons.size();
-        for (auto& p : merlons) curtainS.push_back(std::move(p));
+        for (auto& p : merlons) addDecor(curtainS, p.mesh, p.local);
     }
 
     // ---- West curtain (-X side), split around the gatehouse ------------
@@ -187,59 +210,45 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
         {
             const float zStart = centreWorld.z - compoundHalfZ;
             const float czMid  = zStart + splitLength * 0.5f;
-            curtainW.push_back({
-                Primitives::CreateBox(outerWallW, curtainBodyH, splitLength, Palette::Stone),
-                glm::translate(glm::mat4(1.0f),
-                    glm::vec3(outerMidX, curtainBodyH * 0.5f, czMid))
-            });
-            curtainW.push_back({
-                Primitives::CreateBox(corridorW, corridorT, splitLength, Palette::Stone),
-                glm::translate(glm::mat4(1.0f),
-                    glm::vec3(corridorMidX, corridorY, czMid))
-            });
-            curtainW.push_back({
-                Primitives::CreateBox(innerWallW, curtainBodyH, splitLength, Palette::Stone),
-                glm::translate(glm::mat4(1.0f),
-                    glm::vec3(innerMidX, curtainBodyH * 0.5f, czMid))
-            });
-            solidBoxes.push_back({ glm::vec3(outerMidX, curtainBodyH * 0.5f, czMid),
-                                    glm::vec3(outerWallW * 0.5f, curtainBodyH * 0.5f, splitLength * 0.5f) });
-            solidBoxes.push_back({ glm::vec3(innerMidX, curtainBodyH * 0.5f, czMid),
-                                    glm::vec3(innerWallW * 0.5f, curtainBodyH * 0.5f, splitLength * 0.5f) });
+            addSegment(curtainW,
+                       vec3(outerWallW, curtainBodyH, splitLength),
+                       vec3(outerMidX, curtainBodyH * 0.5f, czMid),
+                       vec3(outerWallW * 0.5f, curtainBodyH * 0.5f, splitLength * 0.5f));
+            addDecor(curtainW,
+                     Primitives::CreateBox(corridorW, corridorT, splitLength,
+                                           Palette::Stone),
+                     glm::translate(glm::mat4(1.0f),
+                         glm::vec3(corridorMidX, corridorY, czMid)));
+            addSegment(curtainW,
+                       vec3(innerWallW, curtainBodyH, splitLength),
+                       vec3(innerMidX, curtainBodyH * 0.5f, czMid),
+                       vec3(innerWallW * 0.5f, curtainBodyH * 0.5f, splitLength * 0.5f));
             auto merlons = Crenellation::AlongZ(
                 outerMidX - merlonD * 0.5f, merlonY, zStart,
                 splitLength, merlonW, merlonH, merlonD, gap, Palette::Stone);
-            curtainWMerlons += (int)merlons.size();
-            for (auto& p : merlons) curtainW.push_back(std::move(p));
+            for (auto& p : merlons) addDecor(curtainW, p.mesh, p.local);
         }
         // South piece (z = +3.75 to z = +compoundHalfZ)
         {
             const float zStart = centreWorld.z + 3.75f;
             const float czMid  = zStart + splitLength * 0.5f;
-            curtainW.push_back({
-                Primitives::CreateBox(outerWallW, curtainBodyH, splitLength, Palette::Stone),
-                glm::translate(glm::mat4(1.0f),
-                    glm::vec3(outerMidX, curtainBodyH * 0.5f, czMid))
-            });
-            curtainW.push_back({
-                Primitives::CreateBox(corridorW, corridorT, splitLength, Palette::Stone),
-                glm::translate(glm::mat4(1.0f),
-                    glm::vec3(corridorMidX, corridorY, czMid))
-            });
-            curtainW.push_back({
-                Primitives::CreateBox(innerWallW, curtainBodyH, splitLength, Palette::Stone),
-                glm::translate(glm::mat4(1.0f),
-                    glm::vec3(innerMidX, curtainBodyH * 0.5f, czMid))
-            });
-            solidBoxes.push_back({ glm::vec3(outerMidX, curtainBodyH * 0.5f, czMid),
-                                    glm::vec3(outerWallW * 0.5f, curtainBodyH * 0.5f, splitLength * 0.5f) });
-            solidBoxes.push_back({ glm::vec3(innerMidX, curtainBodyH * 0.5f, czMid),
-                                    glm::vec3(innerWallW * 0.5f, curtainBodyH * 0.5f, splitLength * 0.5f) });
+            addSegment(curtainW,
+                       vec3(outerWallW, curtainBodyH, splitLength),
+                       vec3(outerMidX, curtainBodyH * 0.5f, czMid),
+                       vec3(outerWallW * 0.5f, curtainBodyH * 0.5f, splitLength * 0.5f));
+            addDecor(curtainW,
+                     Primitives::CreateBox(corridorW, corridorT, splitLength,
+                                           Palette::Stone),
+                     glm::translate(glm::mat4(1.0f),
+                         glm::vec3(corridorMidX, corridorY, czMid)));
+            addSegment(curtainW,
+                       vec3(innerWallW, curtainBodyH, splitLength),
+                       vec3(innerMidX, curtainBodyH * 0.5f, czMid),
+                       vec3(innerWallW * 0.5f, curtainBodyH * 0.5f, splitLength * 0.5f));
             auto merlons = Crenellation::AlongZ(
                 outerMidX - merlonD * 0.5f, merlonY, zStart,
                 splitLength, merlonW, merlonH, merlonD, gap, Palette::Stone);
-            curtainWMerlons += (int)merlons.size();
-            for (auto& p : merlons) curtainW.push_back(std::move(p));
+            for (auto& p : merlons) addDecor(curtainW, p.mesh, p.local);
         }
     }
 
@@ -252,30 +261,23 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
         const float outerMidX  = outerFaceX - outerWallW * 0.5f;
         const float corridorMidX = outerFaceX - outerWallW - corridorW * 0.5f;
         const float innerMidX  = outerFaceX - outerWallW - corridorW - innerWallW * 0.5f;
-        curtainE.push_back({
-            Primitives::CreateBox(outerWallW, curtainBodyH, lengthZ, Palette::Stone),
-            glm::translate(glm::mat4(1.0f),
-                glm::vec3(outerMidX, curtainBodyH * 0.5f, cz))
-        });
-        curtainE.push_back({
-            Primitives::CreateBox(corridorW, corridorT, lengthZ, Palette::Stone),
-            glm::translate(glm::mat4(1.0f),
-                glm::vec3(corridorMidX, corridorY, cz))
-        });
-        curtainE.push_back({
-            Primitives::CreateBox(innerWallW, curtainBodyH, lengthZ, Palette::Stone),
-            glm::translate(glm::mat4(1.0f),
-                glm::vec3(innerMidX, curtainBodyH * 0.5f, cz))
-        });
-        solidBoxes.push_back({ glm::vec3(outerMidX, curtainBodyH * 0.5f, cz),
-                                glm::vec3(outerWallW * 0.5f, curtainBodyH * 0.5f, lengthZ * 0.5f) });
-        solidBoxes.push_back({ glm::vec3(innerMidX, curtainBodyH * 0.5f, cz),
-                                glm::vec3(innerWallW * 0.5f, curtainBodyH * 0.5f, lengthZ * 0.5f) });
+        addSegment(curtainE,
+                   vec3(outerWallW, curtainBodyH, lengthZ),
+                   vec3(outerMidX, curtainBodyH * 0.5f, cz),
+                   vec3(outerWallW * 0.5f, curtainBodyH * 0.5f, lengthZ * 0.5f));
+        addDecor(curtainE,
+                 Primitives::CreateBox(corridorW, corridorT, lengthZ,
+                                       Palette::Stone),
+                 glm::translate(glm::mat4(1.0f),
+                     glm::vec3(corridorMidX, corridorY, cz)));
+        addSegment(curtainE,
+                   vec3(innerWallW, curtainBodyH, lengthZ),
+                   vec3(innerMidX, curtainBodyH * 0.5f, cz),
+                   vec3(innerWallW * 0.5f, curtainBodyH * 0.5f, lengthZ * 0.5f));
         auto merlons = Crenellation::AlongZ(
             outerMidX + merlonD * 0.5f, merlonY, cz - lengthZ * 0.5f,
             lengthZ, merlonW, merlonH, merlonD, gap, Palette::Stone);
-        curtainEMerlons = (int)merlons.size();
-        for (auto& p : merlons) curtainE.push_back(std::move(p));
+        for (auto& p : merlons) addDecor(curtainE, p.mesh, p.local);
     }
 
     // ---- Phase 8: corner + gatehouse tower AABBs -----------------------
@@ -301,10 +303,51 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
     pushTowerAABB(centreWorld.x - compoundHalfX, centreWorld.z + 3.75f, ghSide, ghBodyH);
 }
 
+// Phase 9: damage every alive wall segment that the sphere touches.
+// Each hit strips kWallSegmentDamagePerHit health; the segment's mesh
+// is rebuilt at a darker shade.  At 0 the segment is removed and its
+// solidBox entry is dropped so future cannonballs fly through.
+bool CompoundCastle::CheckWallSet(WallSet& ws, glm::vec3 sphereCentre, float sphereRadius) {
+    bool anyKilled = false;
+    for (WallSegment& s : ws.segments) {
+        if (!s.alive) continue;
+        glm::vec3 d(
+            sphereCentre.x - std::fmax(s.centre.x - s.half.x, std::fmin(sphereCentre.x, s.centre.x + s.half.x)),
+            sphereCentre.y - std::fmax(s.centre.y - s.half.y, std::fmin(sphereCentre.y, s.centre.y + s.half.y)),
+            sphereCentre.z - std::fmax(s.centre.z - s.half.z, std::fmin(sphereCentre.z, s.centre.z + s.half.z))
+        );
+        if (glm::dot(d, d) > sphereRadius * sphereRadius) continue;
+        // Hit!
+        s.health -= kWallSegmentDamagePerHit;
+        // Discard old mesh, build a new one at the new colour.
+        s.mesh.Delete();
+        glm::vec3 newColour = WallSegmentDamageColour(s.health);
+        s.mesh = Primitives::CreateBox(s.size.x, s.size.y, s.size.z, newColour);
+        if (s.health <= 0.0f) {
+            s.alive = false;
+            // Free the mesh; the Draw loop ignores it from now on.
+            s.mesh.Delete();
+            // Drop the segment's solidBox so cannonballs fly through
+            // the gap.  We identify it by matching centre + half.
+            auto it = std::find_if(solidBoxes.begin(), solidBoxes.end(),
+                [&](const SolidBox& b) {
+                    return b.centre == s.centre && b.half == s.half;
+                });
+            if (it != solidBoxes.end()) solidBoxes.erase(it);
+            anyKilled = true;
+        }
+    }
+    return anyKilled;
+}
+
 bool CompoundCastle::CheckHit(glm::vec3 sphereCentre, float sphereRadius) {
     bool any = false;
     if (doors.CheckHit(sphereCentre, sphereRadius)) any = true;
     if (gate.CheckHit (sphereCentre, sphereRadius)) any = true;
+    if (CheckWallSet(curtainN, sphereCentre, sphereRadius)) any = true;
+    if (CheckWallSet(curtainS, sphereCentre, sphereRadius)) any = true;
+    if (CheckWallSet(curtainW, sphereCentre, sphereRadius)) any = true;
+    if (CheckWallSet(curtainE, sphereCentre, sphereRadius)) any = true;
     return any;
 }
 
@@ -340,6 +383,38 @@ int CompoundCastle::TotalDoorPanelCount() const { return doors.TotalPanelCount()
 int CompoundCastle::AliveBrickCount() const     { return gate.AliveBrickCount(); }
 int CompoundCastle::TotalBrickCount() const     { return gate.TotalBrickCount(); }
 
+int CompoundCastle::AliveWallSegmentCount() const {
+    int n = 0;
+    auto count = [&](const WallSet& ws) {
+        for (const WallSegment& s : ws.segments) if (s.alive) ++n;
+    };
+    count(curtainN); count(curtainS); count(curtainW); count(curtainE);
+    return n;
+}
+int CompoundCastle::TotalWallSegmentCount() const {
+    return (int)curtainN.segments.size() + (int)curtainS.segments.size()
+         + (int)curtainW.segments.size() + (int)curtainE.segments.size();
+}
+
+void CompoundCastle::DrawWallSet(const WallSet& ws, GLuint modelLoc) {
+    // Breakable stone segments first (so the corridor slab + merlons
+    // sit on top of them visually).  Mesh::Draw() is non-const, so the
+    // loop body has to be able to take a non-const reference - the
+    // `WallSet` itself is still const but the segment refs are not.
+    for (const WallSegment& s : ws.segments) {
+        if (!s.alive) continue;
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(s.local));
+        // mesh.Draw() needs a non-const Mesh, but Draw() doesn't
+        // actually mutate it - so cast away const.
+        const_cast<Mesh&>(s.mesh).Draw();
+    }
+    // Corridor slabs + merlons (always drawn).
+    for (const Part& p : ws.decor) {
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(p.local));
+        const_cast<Mesh&>(p.mesh).Draw();
+    }
+}
+
 void CompoundCastle::Draw(Shader& shader) {
     GLuint modelLoc = glGetUniformLocation(shader.ID, "model");
 
@@ -349,11 +424,11 @@ void CompoundCastle::Draw(Shader& shader) {
     cornerSW.Draw(shader);
     cornerSE.Draw(shader);
 
-    // 4 curtain walls + merlons.
-    for (Part& p : curtainN) { glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(p.local)); p.mesh.Draw(); }
-    for (Part& p : curtainS) { glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(p.local)); p.mesh.Draw(); }
-    for (Part& p : curtainW) { glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(p.local)); p.mesh.Draw(); }
-    for (Part& p : curtainE) { glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(p.local)); p.mesh.Draw(); }
+    // 4 curtain walls (outer + inner segments + corridor + merlons).
+    DrawWallSet(curtainN, modelLoc);
+    DrawWallSet(curtainS, modelLoc);
+    DrawWallSet(curtainW, modelLoc);
+    DrawWallSet(curtainE, modelLoc);
 
     // Gatehouse towers, then the brick + lintel, then the doors.
     gatehouseTower.Draw(shader);
@@ -373,10 +448,14 @@ void CompoundCastle::Delete() {
     cornerNE.Delete();
     cornerSW.Delete();
     cornerSE.Delete();
-    for (Part& p : curtainN) p.mesh.Delete();
-    for (Part& p : curtainS) p.mesh.Delete();
-    for (Part& p : curtainW) p.mesh.Delete();
-    for (Part& p : curtainE) p.mesh.Delete();
+    for (WallSegment& s : curtainN.segments) s.mesh.Delete();
+    for (WallSegment& s : curtainS.segments) s.mesh.Delete();
+    for (WallSegment& s : curtainW.segments) s.mesh.Delete();
+    for (WallSegment& s : curtainE.segments) s.mesh.Delete();
+    for (Part& p : curtainN.decor) p.mesh.Delete();
+    for (Part& p : curtainS.decor) p.mesh.Delete();
+    for (Part& p : curtainW.decor) p.mesh.Delete();
+    for (Part& p : curtainE.decor) p.mesh.Delete();
     gatehouseTower.Delete();
     gatehouseTower2.Delete();
     gate.Delete();

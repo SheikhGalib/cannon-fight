@@ -40,12 +40,15 @@ namespace Palette {
     inline const glm::vec3 TentCloth (0.60f, 0.40f, 0.20f);  // canvas tent cloth
     inline const glm::vec3 TentBase  (0.35f, 0.22f, 0.12f);  // wooden tent platform
     inline const glm::vec3 Gold      (0.95f, 0.78f, 0.18f);  // gold crest / treasure
-    inline const glm::vec3 SnowCap   (0.95f, 0.97f, 1.00f);  // mountain snow caps
+    inline const glm::vec3 SnowCap   (0.85f, 0.92f, 1.00f);  // mountain ice caps (icy blue-white)
+    inline const glm::vec3 IceRim    (0.65f, 0.82f, 1.00f);  // icier mid-tone for the cap base
     inline const glm::vec3 Mountain  (0.40f, 0.38f, 0.42f);  // distant mountain body
+    inline const glm::vec3 Cloud     (0.96f, 0.97f, 1.00f);  // ring cloud puffs around mountain tops
     inline const glm::vec3 Valley    (0.32f, 0.45f, 0.22f);  // distant valley floor
     inline const glm::vec3 NightSky  (0.05f, 0.06f, 0.15f);  // night sky
     inline const glm::vec3 Arrow     (0.20f, 0.15f, 0.08f);  // wooden arrow shaft
     inline const glm::vec3 Shield    (0.55f, 0.45f, 0.15f);  // brass/wood shield face
+    inline const glm::vec3 Bird      (0.10f, 0.08f, 0.08f);  // bird silhouette
 
 }
 
