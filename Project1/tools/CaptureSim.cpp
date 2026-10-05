@@ -57,6 +57,7 @@
 #include "Arrow.h"
 #include "SkyClouds.h"
 #include "Birds.h"
+#include "SignalTower.h"
 #include "Tree.h"
 #include "Water.h"
 
@@ -146,7 +147,7 @@ int main() {
 
     // ----- Scene (a copy of Main.cpp's main setup) -----
     Mesh ground = Primitives::CreatePlane(400.0f, 400.0f, Palette::Grass);
-    Water river(vec3(-4.0f, 0.0f, 0.0f), 12.0f, 240.0f);
+    Water river(vec3(-4.0f, 0.0f, 0.0f), 12.0f, 480.0f);
 
     const float cannonX = -15.0f;
     const float cannonSpacing = 2.5f;
@@ -199,16 +200,28 @@ int main() {
     std::vector<CampTent> tents;
     for (int r = 0; r < 2; r++) {
         for (int c = 0; c < 3; c++) {
-            float tx = cannonX - 14.0f - float(r) * 2.0f;
-            float tz = (float(c) - 1.0f) * 5.0f;
+            float tx = cannonX - 6.0f + float(r) * 4.0f;   // x = -21 .. -17
+            float tz = -16.0f - float(r) * 6.0f - float(c) * 4.0f;  // z = -28 .. -16
             tents.emplace_back(vec3(tx, 0.0f, tz), 1.5f, 2.2f,
                                Palette::TentCloth, Palette::TentBase);
         }
     }
     GoldCrest goldCrest(vec3(crestX, 0.0f, crestZ));
     Scenery scenery(vec3(0.0f, 0.0f, 0.0f), 110.0f, 200.0f, 40);
-    SkyClouds skyClouds(8, 120.0f, 120.0f, 55.0f, 75.0f);
+    SkyClouds skyClouds(10, 140.0f, 140.0f, 28.0f, 42.0f);
     Birds birds(6, vec3(crestX, 0.0f, crestZ), 50.0f, 70.0f, 110.0f);
+
+    // Phase 9 (extra): riverside signal towers (matches Main.cpp).
+    std::vector<SignalTower> signalTowers;
+    for (int side = 0; side < 2; side++) {
+        float towerX = (side == 0) ? -16.0f : +8.0f;
+        for (int i = 0; i < 6; i++) {
+            float tz = -150.0f + float(i) * 60.0f;
+            if (std::abs(tz) < 15.0f) continue;
+            float h = 5.5f + float((i + side) % 3) * 0.8f;
+            signalTowers.emplace_back(vec3(towerX, 0.0f, tz), h);
+        }
+    }
     Robot robot(vec3(3.0f, 0.0f, 0.0f));
 
     // Trees (Phase 9): scattered in safe zones only.
@@ -256,6 +269,13 @@ int main() {
     const float kArcherFirePeriod = 1.6f;
     float cannonAutoFireTimer = 0.0f;
     const float cannonAutoFirePeriod = 1.2f;
+
+    // Phase 9 (extra): army march behaviour (mirrors Main.cpp).
+    std::vector<vec3> armyMarchStart(army.size());
+    std::vector<vec3> armyMarchTarget(army.size());
+    bool armyMarchStarted = false;
+    const float kArmyMarchSpeed = 2.5f;
+    const float kArmyMarchTargetX = 8.0f;
 
     std::vector<Arrow> arrows;
     std::vector<Projectile> projectiles;
@@ -405,6 +425,29 @@ int main() {
         } else if (battle == BattlePhase::Advance) {
             castle.SetBridgeRaised(false);
             bool doorBroken = (castle.AliveDoorPanelCount() == 0);
+            // Trigger the army march on the first frame the door
+            // is broken (mirrors Main.cpp).
+            if (doorBroken && !armyMarchStarted) {
+                armyMarchStarted = true;
+                for (size_t si = 0; si < army.size(); si++) {
+                    if (!armyAlive[si]) continue;
+                    vec3 p = army[si].GetPosition();
+                    armyMarchStart[si] = p;
+                    armyMarchTarget[si] = vec3(kArmyMarchTargetX, p.y, p.z);
+                }
+            }
+            if (armyMarchStarted) {
+                for (size_t si = 0; si < army.size(); si++) {
+                    if (!armyAlive[si]) continue;
+                    vec3 cur = army[si].GetPosition();
+                    vec3 to  = armyMarchTarget[si] - cur;
+                    float d  = length(to);
+                    if (d < 0.05f) continue;
+                    vec3 step = to / d * kArmyMarchSpeed * dt;
+                    if (length(step) > d) step = to;
+                    army[si].SetPosition(cur + step);
+                }
+            }
             if (battleTimer > 18.0f || doorBroken) {
                 battle = BattlePhase::End; battleTimer = 0.0f;
                 int la = 0; for (bool a : armyAlive)   if (a) ++la;
@@ -413,9 +456,24 @@ int main() {
                 goldCrest.SetVictorious(doorBroken && la > 0);
             }
         } else if (battle == BattlePhase::End) {
-            // Stay in End for 4 extra seconds so the gold crest pulse
-            // has time to read on camera.
-            if (battleTimer > 4.0f) battleFinished = true;
+            // Keep marching during End so the final frames show
+            // the army inside the castle.
+            if (armyMarchStarted) {
+                for (size_t si = 0; si < army.size(); si++) {
+                    if (!armyAlive[si]) continue;
+                    vec3 cur = army[si].GetPosition();
+                    vec3 to  = armyMarchTarget[si] - cur;
+                    float d  = length(to);
+                    if (d < 0.05f) continue;
+                    vec3 step = to / d * kArmyMarchSpeed * dt;
+                    if (length(step) > d) step = to;
+                    army[si].SetPosition(cur + step);
+                }
+            }
+            // Stay in End for 6 extra seconds so the gold crest
+            // pulse + army-in-castle view have time to read on
+            // camera.
+            if (battleTimer > 6.0f) battleFinished = true;
         }
 
         // ---- Archers shoot arrows ----
@@ -511,6 +569,7 @@ int main() {
         ground.Draw();
         river.Draw(shaderProgram);
         scenery.Draw(shaderProgram);
+        for (SignalTower& t : signalTowers) t.Draw(shaderProgram);
         skyClouds.Draw(shaderProgram);
         castle.Draw(shaderProgram);
         robot.Draw(shaderProgram);
@@ -574,6 +633,7 @@ int main() {
     scenery.Delete();
     skyClouds.Delete();
     birds.Delete();
+    for (SignalTower& t : signalTowers) t.Delete();
     goldCrest.Delete();
     for (Projectile& b : projectiles) b.Delete();
     for (Arrow& a : arrows) a.Delete();

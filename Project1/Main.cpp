@@ -32,6 +32,7 @@
 #include "GoldCrest.h"
 #include "SkyClouds.h"
 #include "Birds.h"
+#include "SignalTower.h"
 #include "Arrow.h"
 #include "Tree.h"
 
@@ -214,8 +215,10 @@ int main() {
 	// surface overwrites the grass in the river footprint.
 	//
 	// Centre X = 12 - 16 = -4 (one compound-halfX past the western
-	// gatehouse).  Width 12 m along X, length 240 m along Z.
-	Water river(vec3(-4.0f, 0.0f, 0.0f), /*sizeX=*/12.0f, /*sizeZ=*/240.0f);
+	// gatehouse).  Width 12 m along X, length 480 m along Z so the
+	// river fills the max-zoom-out view in both +Z and -Z
+	// directions (half the visible ground plane).
+	Water river(vec3(-4.0f, 0.0f, 0.0f), /*sizeX=*/12.0f, /*sizeZ=*/480.0f);
 
 	// --- Phase 5: three cannons lined up BEHIND the moat ----------------
 	const float cannonX = -15.0f;                  // ~8 m back from the moat's far bank
@@ -282,10 +285,10 @@ int main() {
 	// Phase 7: army faces the castle door (default 0° yaw already
 	// points them along +X, but make it explicit).  Cannon crew sits
 	// next to the cannon's centre facing the same direction.
-	for (Soldier& s : army) s.SetYaw(0.0f);
-	crewLeft  .SetYaw(0.0f);
-	crewCentre.SetYaw(0.0f);
-	crewRight .SetYaw(0.0f);
+	for (Soldier& s : army) s.SetYaw(180.0f);
+	crewLeft  .SetYaw(180.0f);
+	crewCentre.SetYaw(180.0f);
+	crewRight .SetYaw(180.0f);
 
 	// --- Phase 8: castle interior defenders ----------------------------
 	// A small detachment of defender soldiers (dark blue) standing
@@ -303,14 +306,20 @@ int main() {
 		defenders.back().SetYaw(180.0f);  // face the camera (default south)
 	}
 
-	// --- Phase 8: camp tents behind the army ---------------------------
-	// 6 tents in two rows behind the army formation.  Canvas roof in
-	// TentCloth, wooden base in TentBase.
+	// --- Phase 8: camp tents moved off the marching path --------------
+	// Phase 9: tents used to be a 2x3 block directly behind the army
+	// grid, but that puts them in the way of the army's march toward
+	// the castle once the door is broken.  Move them out to the
+	// -Z flank (z = -28..-16) so the army's column at z = [-4..4]
+	// can march unimpeded toward +X.  We also spread them along a
+	// longer Z span so they look like a small encampment rather
+	// than a tight cluster.
 	std::vector<CampTent> tents;
 	for (int r = 0; r < 2; r++) {
 		for (int c = 0; c < 3; c++) {
-			float tx = cannonX - 14.0f - float(r) * 2.0f;
-			float tz = (float(c) - 1.0f) * 5.0f;
+			float tx = cannonX - 6.0f + float(r) * 4.0f;     // x = -21 .. -17
+			float tz = -16.0f - float(r) * 6.0f
+			            - float(c) * 4.0f;                  // z = -28 .. -16
 			tents.emplace_back(vec3(tx, 0.0f, tz),
 			                    /*baseRadius=*/1.5f, /*roofHeight=*/2.2f,
 			                    Palette::TentCloth, Palette::TentBase);
@@ -331,14 +340,15 @@ int main() {
 	                /*count=*/40);
 
 	// --- Phase 9 (extra): moving clouds in the sky --------------------
-	// A handful of big cloud blobs high above the scene that drift
-	// slowly along +X and wrap around, so the sky feels alive.
-	// 8 blobs across a ±120 m XZ window at 55..75 m altitude -
-	// well above the castle towers (which top out around 18 m) so
-	// they look like distant sky, not fog around the castle.
-	SkyClouds skyClouds(/*numClouds=*/8,
-	                     /*xSpan=*/120.0f, /*zSpan=*/120.0f,
-	                     /*skyLow=*/55.0f,  /*skyHigh=*/75.0f);
+	// A handful of big cloud blobs above the scene that drift slowly
+	// along +X and wrap around, so the sky feels alive.  We keep
+	// them at 28..42 m altitude (well above the castle towers at
+	// ~18 m) so they're clearly "sky" but still visible in the
+	// default camera view (which sits at pitch ≈ 0.4 rad, so the
+	// camera-to-sky line is shallow).
+	SkyClouds skyClouds(/*numClouds=*/10,
+	                     /*xSpan=*/140.0f, /*zSpan=*/140.0f,
+	                     /*skyLow=*/28.0f,  /*skyHigh=*/42.0f);
 
 	// --- Phase 9 (extra): a flock of birds circling overhead ----------
 	// 6 birds orbiting the castle at ~50 m altitude, with their
@@ -348,6 +358,29 @@ int main() {
 	            /*centre=*/vec3(crestX, 0.0f, crestZ),
 	            /*alt=*/50.0f,
 	            /*radiusMin=*/70.0f, /*radiusMax=*/110.0f);
+
+	// --- Phase 9 (extra): riverside signal towers ---------------------
+	// Small stone watchtowers spaced along the river bank so the
+	// max-zoom-out view reads as "fortified river line" instead of
+	// "empty water + nothing".  We put towers on BOTH sides of the
+	// river at z intervals of 35 m, alternating slightly in height
+	// for visual variety.  River centre x = -4, so we place towers
+	// at x = -16 (cannon-side bank) and x = +8 (castle-side bank,
+	// past the moat).
+	std::vector<SignalTower> signalTowers;
+	for (int side = 0; side < 2; side++) {
+		float towerX = (side == 0) ? -16.0f : +8.0f;
+		for (int i = 0; i < 6; i++) {
+			float tz = -150.0f + float(i) * 60.0f;   // -150 .. +150
+			// Skip towers that sit on or near the bridge
+			// (which is at z = 0, x = -4).  If a tower would be
+			// inside the moat's z range or under the bridge,
+			// drop it.
+			if (std::abs(tz) < 15.0f) continue;
+			float h = 5.5f + float((i + side) % 3) * 0.8f;   // 5.5..7.1 m
+			signalTowers.emplace_back(vec3(towerX, 0.0f, tz), h);
+		}
+	}
 
 	// --- Phase 9: trees brought back, but ONLY in the safe zones ----
 	// Phase 8 removed trees entirely (the user said "remove them
@@ -438,6 +471,26 @@ int main() {
 	// Index of the next defender to be promoted to archer when a
 	// tower soldier dies.
 	int nextReplacementDefender = 0;
+
+	// Phase 9 (extra): army march behaviour.  When the door is
+	// broken during the Advance phase, every surviving army soldier
+	// starts walking across the bridge into the castle.  Each
+	// soldier remembers the world-space position it started from
+	// (marchStart), and progresses each frame toward a per-soldier
+	// target (marchTarget) at a slow marching speed.
+	//
+	// We also track whether the army has begun marching yet
+	// (armyMarchStarted) so we don't start moving soldiers before
+	// the door is broken.
+	std::vector<vec3> armyMarchStart(army.size());
+	std::vector<vec3> armyMarchTarget(army.size());
+	bool armyMarchStarted = false;
+	// Marching speed (m/s).  Slow enough to look like a march, fast
+	// enough to cross the bridge in a few seconds.
+	static constexpr float kArmyMarchSpeed = 2.5f;
+	// March target X - well inside the castle compound so the
+	// soldiers don't stop short of the gold crest.
+	const float kArmyMarchTargetX = 8.0f;
 	// Cooldown between arrow shots from the archers during the battle
 	// sim.  Each archer fires one arrow every `kArcherFirePeriod`
 	// seconds while alive and the sim is in Defending or Advance.
@@ -559,6 +612,9 @@ int main() {
 			battle = BattlePhase::Inactive;
 			battleTimer = 0.0f;
 			battlePaused = false;
+			// Reset army march state so a fresh simulation
+			// doesn't immediately resume a previous march.
+			armyMarchStarted = false;
 		}
 		tPrev = tNow;
 
@@ -750,10 +806,47 @@ int main() {
 				}
 			}
 			// End the Advance phase once the door is broken OR
-			// after 18 s (so the simulation finishes decisively
-			// even if the cannons missed).
+			// after 22 s (so the simulation finishes decisively
+			// even if the cannons missed, and gives the army
+			// time to march across the bridge after the door
+			// breaks).
 			bool doorBroken = (castle.AliveDoorPanelCount() == 0);
-			if (battleTimer > 18.0f || doorBroken) {
+			// Trigger the army march on the first frame the door
+			// is broken.  We snapshot each surviving soldier's
+			// CURRENT position as the march start, and set its
+			// target to a point well inside the castle (close to
+			// the gold crest).  Once started, the soldiers
+			// continue marching regardless of which frame
+			// triggered it.
+			if (doorBroken && !armyMarchStarted) {
+				armyMarchStarted = true;
+				for (size_t si = 0; si < army.size(); si++) {
+					if (!armyAlive[si]) continue;
+					vec3 p = army[si].GetPosition();
+					armyMarchStart[si] = p;
+					// Per-soldier target: same Z (column), X = 8
+					// (just inside the gatehouse).  We keep the
+					// soldier in its Z column so the formation
+					// holds shape during the march.
+					armyMarchTarget[si] = vec3(kArmyMarchTargetX,
+					                            p.y,
+					                            p.z);
+				}
+			}
+			// March every alive soldier that's currently marching.
+			if (armyMarchStarted) {
+				for (size_t si = 0; si < army.size(); si++) {
+					if (!armyAlive[si]) continue;
+					vec3 cur = army[si].GetPosition();
+					vec3 to  = armyMarchTarget[si] - cur;
+					float d  = length(to);
+					if (d < 0.05f) continue;     // already there
+					vec3 step = to / d * kArmyMarchSpeed * deltaTime;
+					if (length(step) > d) step = to;
+					army[si].SetPosition(cur + step);
+				}
+			}
+			if (battleTimer > 22.0f || doorBroken) {
 				battle = BattlePhase::End;
 				battleTimer = 0.0f;
 				// Decide the winner.  Attackers win if (door broken
@@ -768,7 +861,22 @@ int main() {
 				goldCrest.SetVictorious(attackersWin);
 			}
 		} else if (battle == BattlePhase::End) {
-			// Sit on the End state until the user presses T to restart.
+			// Sit on the End state until the user presses T to
+			// restart.  Keep marching any in-flight soldiers so
+			// the end-frame screenshot shows the army inside
+			// the castle.
+			if (armyMarchStarted) {
+				for (size_t si = 0; si < army.size(); si++) {
+					if (!armyAlive[si]) continue;
+					vec3 cur = army[si].GetPosition();
+					vec3 to  = armyMarchTarget[si] - cur;
+					float d  = length(to);
+					if (d < 0.05f) continue;
+					vec3 step = to / d * kArmyMarchSpeed * deltaTime;
+					if (length(step) > d) step = to;
+					army[si].SetPosition(cur + step);
+				}
+			}
 		}
 
 		// Archer arrow fire: every kArcherFirePeriod seconds each
@@ -897,6 +1005,11 @@ int main() {
 		// compound's footprint (otherwise the mountains visually
 		// "stick through" the castle).
 		scenery.Draw(shaderProgram);
+
+		// Riverside signal towers: drawn after the scenery so
+		// they sit on top of the grass/water plane, but before
+		// the castle so they don't accidentally occlude it.
+		for (SignalTower& t : signalTowers) t.Draw(shaderProgram);
 
 		// Sky clouds: drift high above the scene; drawn after the
 		// castle so they sit on top of the towers visually (and
@@ -1184,6 +1297,7 @@ int main() {
 	goldCrest.Delete();
 	skyClouds.Delete();
 	birds.Delete();
+	for (SignalTower& t : signalTowers) t.Delete();
 	robot.Delete();
 	for (Projectile& ball : projectiles) ball.Delete();
 	for (Arrow& a : arrows) a.Delete();
