@@ -6,18 +6,20 @@ layout (location = 2) in vec3 aColor;
 out vec3 fragPos;
 out vec3 fragNormal;
 out vec3 fragColor;
+out vec4 fragPosLightSpace;
 
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 proj;
+uniform mat4 lightSpaceMatrix;
 
 void main()
 {
-   vec4 worldPos = model * vec4(aPos, 1.0);
-   fragPos = worldPos.xyz;
-   gl_Position = proj * view * worldPos;
+    vec4 worldPos = model * vec4(aPos, 1.0);
+    fragPos = worldPos.xyz;
+    gl_Position = proj * view * worldPos;
 
-   fragNormal = mat3(model) * aNormal;
-   fragColor = aColor;
+    fragNormal = mat3(model) * aNormal;
+    fragColor = aColor;
+    fragPosLightSpace = lightSpaceMatrix * worldPos;
 }
-

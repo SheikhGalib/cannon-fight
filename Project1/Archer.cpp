@@ -8,127 +8,125 @@
 Archer::Archer(glm::vec3 baseWorld)
     : transform(glm::translate(glm::mat4(1.0f), baseWorld))
 {
-    // Layout, all in archer-local coordinates with the feet at y = 0:
-    //
-    //     +---+
-    //     | H |    head:        box 0.30 x 0.35 x 0.30, Skin colour
-    //     +---+
-    //     |   |    helmet cone:  r=0.22 h=0.28, DarkIron
-    //     +---+   body:         box 0.55 x 0.85 x 0.40, Iron
-    //     |   |
-    //     | B |
-    //     |   |
-    //     +---+   shoulders at y = legTop = 1.20
-    //     |   |   pauldrons:    two 0.22 x 0.10 x 0.22 Iron boxes
-    //     |   |
-    //     | L |   legs:         two cylinders r=0.12 h=1.20, DarkIron
-    //     |   |                 spaced 0.20 on X (chainmail leggings)
-    //     |   |
-    //     | A |   arms:         two cylinders r=0.08 h=0.90, Iron
-    //     |   |
-    //     ────     y = 0 (feet)
-    //
-    // Plus a longbow held in the right hand and a quiver strapped to the
-    // back, so the figure reads as an archer rather than as a Robot.
-    //
-    // All sizes are constants right here on purpose — there are several
-    // archers in the scene (one per tower) but the proportions are
-    // always identical, so spreading them out into Dimensions.h would
-    // only obscure the layout.
+    // =========================================================================
+    // Realistic Medieval Archer Figure
+    // Proportioned with chainmail greaves, leather boots, archer's tunic,
+    // leather bracer/vambrace, longbow, and back-strapped quiver with arrows.
+    // =========================================================================
 
-    // --- legs (chainmail) -----------------------------------------------
-    const float legRadius = 0.12f;
-    const float legHeight = 1.20f;
-    const float legGap    = 0.20f;          // half-distance between legs on X
+    const float legGap = 0.18f;
 
+    // --- 1. Boots & Lower Legs (Greaves / Mail) -----------------------------
     for (float x : { -legGap, +legGap }) {
+        // Leather boot
         parts.push_back({
-            Primitives::CreateCylinder(legRadius, legHeight, 14, Palette::DarkIron,
-                                       /*centered=*/false),
-            glm::translate(glm::mat4(1.0f), glm::vec3(x, legHeight * 0.5f, 0.0f))
+            Primitives::CreateBox(0.18f, 0.16f, 0.28f, Palette::DarkIron),
+            glm::translate(glm::mat4(1.0f), glm::vec3(x, 0.08f, 0.04f))
+        });
+        // Shin chainmail
+        parts.push_back({
+            Primitives::CreateCylinder(0.11f, 0.50f, 14, Palette::DarkIron, /*centered=*/false),
+            glm::translate(glm::mat4(1.0f), glm::vec3(x, 0.18f, 0.0f))
+        });
+        // Thigh
+        parts.push_back({
+            Primitives::CreateCylinder(0.125f, 0.42f, 14, Palette::DarkIron, /*centered=*/false),
+            glm::translate(glm::mat4(1.0f), glm::vec3(x, 0.68f, 0.0f))
         });
     }
 
-    // --- body (jerkin) --------------------------------------------------
-    const float bodyW = 0.55f, bodyH = 0.85f, bodyD = 0.40f;
-    const float bodyBottom = legHeight;
-    const float bodyCentre = bodyBottom + bodyH * 0.5f;
-
+    // --- 2. Body / Quilted Jerkin & Belt ------------------------------------
+    // Tunic skirt
     parts.push_back({
-        Primitives::CreateBox(bodyW, bodyH, bodyD, Palette::Iron),
-        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, bodyCentre, 0.0f))
+        Primitives::CreateBox(0.50f, 0.26f, 0.34f, Palette::Defender),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.18f, 0.0f))
+    });
+    // Leather belt with brass buckle
+    parts.push_back({
+        Primitives::CreateBox(0.52f, 0.07f, 0.36f, Palette::Leather),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.315f, 0.0f))
+    });
+    parts.push_back({
+        Primitives::CreateBox(0.09f, 0.08f, 0.04f, Palette::Brass),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.315f, 0.18f))
+    });
+    // Archer's leather jerkin (torso)
+    parts.push_back({
+        Primitives::CreateBox(0.48f, 0.42f, 0.32f, Palette::Defender),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.53f, 0.0f))
     });
 
-    // --- pauldrons (shoulder armour) --------------------------------------
-    const float paultronW = 0.22f, paultronH = 0.10f, paultronD = 0.22f;
-    const float paultronY = bodyBottom + bodyH - paultronH * 0.5f;
-    const float paultronX = bodyW * 0.5f + paultronW * 0.4f;
-    for (float x : { -paultronX, +paultronX }) {
+    // --- 3. Pauldrons -------------------------------------------------------
+    const float shoulderX = 0.29f;
+    const float shoulderY = 1.66f;
+    for (float x : { -shoulderX, +shoulderX }) {
         parts.push_back({
-            Primitives::CreateBox(paultronW, paultronH, paultronD, Palette::Iron),
-            glm::translate(glm::mat4(1.0f), glm::vec3(x, paultronY, 0.0f))
+            Primitives::CreateBox(0.18f, 0.10f, 0.22f, Palette::Iron),
+            glm::translate(glm::mat4(1.0f), glm::vec3(x, shoulderY, 0.0f))
         });
     }
 
-    // --- arms -----------------------------------------------------------
-    const float armRadius = 0.08f;
-    const float armLength = 0.90f;
-    const float armTop    = bodyBottom + bodyH * 0.85f;
-    const float armGap    = bodyW * 0.5f + armRadius * 0.5f;
-    for (float x : { -armGap, +armGap }) {
+    // --- 4. Arms & Archer Vambraces -----------------------------------------
+    const float armX = 0.30f;
+    for (float x : { -armX, +armX }) {
         parts.push_back({
-            Primitives::CreateCylinder(armRadius, armLength, 12, Palette::Iron,
-                                       /*centered=*/false),
-            glm::translate(glm::mat4(1.0f), glm::vec3(x, armTop - armLength * 0.5f, 0.0f))
+            Primitives::CreateCylinder(0.075f, 0.32f, 12, Palette::Defender, /*centered=*/false),
+            glm::translate(glm::mat4(1.0f), glm::vec3(x, 1.38f, 0.0f))
+        });
+        // Archer's leather forearm bracer (protects from bowstring)
+        parts.push_back({
+            Primitives::CreateCylinder(0.07f, 0.30f, 12, Palette::Leather, /*centered=*/false),
+            glm::translate(glm::mat4(1.0f), glm::vec3(x, 1.10f, 0.0f))
+        });
+        // Gauntlet / hand
+        parts.push_back({
+            Primitives::CreateBox(0.09f, 0.10f, 0.10f, Palette::Skin),
+            glm::translate(glm::mat4(1.0f), glm::vec3(x, 1.04f, 0.0f))
         });
     }
 
-    // --- head (skin) ----------------------------------------------------
-    const float headW = 0.30f, headH = 0.35f, headD = 0.30f;
-    const float headBottom = bodyBottom + bodyH;
-    const float headCentre = headBottom + headH * 0.5f;
+    // --- 5. Head & Sallet / Archer Helmet -----------------------------------
     parts.push_back({
-        Primitives::CreateBox(headW, headH, headD, Palette::Skin),
-        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, headCentre, 0.0f))
+        Primitives::CreateBox(0.24f, 0.26f, 0.24f, Palette::Skin),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.89f, 0.0f))
+    });
+    // Helmet dome crown
+    parts.push_back({
+        Primitives::CreateCone(0.20f, 0.12f, 0.22f, 12, Palette::DarkIron, /*centered=*/false),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.98f, 0.0f))
+    });
+    // Flared brim / nose guard
+    parts.push_back({
+        Primitives::CreateBox(0.26f, 0.06f, 0.26f, Palette::DarkIron),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.96f, 0.01f))
+    });
+    parts.push_back({
+        Primitives::CreateBox(0.04f, 0.09f, 0.07f, Palette::DarkIron),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.91f, 0.12f))
     });
 
-    // --- helmet (cone) + nose-guard -------------------------------------
-    const float helmetR = 0.22f;
-    const float helmetH = 0.28f;
+    // --- 6. Longbow (held in left hand, ready stance) -----------------------
+    const float bowX = -armX - 0.08f;
+    const float bowY = 1.35f;
+    glm::mat4 bowT = glm::translate(glm::mat4(1.0f), glm::vec3(bowX, bowY, 0.12f));
+    bowT = glm::rotate(bowT, glm::radians(20.0f), glm::vec3(0.0f, 0.0f, 1.0f));
     parts.push_back({
-        Primitives::CreateCone(helmetR, helmetR * 0.6f, helmetH, 10, Palette::DarkIron,
-                               /*centered=*/false, /*yOffset=*/0.0f),
-        glm::translate(glm::mat4(1.0f),
-                       glm::vec3(0.0f, headBottom + headH + helmetH * 0.5f, 0.0f))
-    });
-    // Nose-guard: small box on the +X face of the helmet.
-    parts.push_back({
-        Primitives::CreateBox(0.04f, 0.10f, 0.08f, Palette::DarkIron),
-        glm::translate(glm::mat4(1.0f),
-                       glm::vec3(headW * 0.5f + 0.02f, headCentre, 0.0f))
-    });
-
-    // --- longbow (held in the right hand, tilted slightly) -------------
-    // Box dims: 0.04 wide (across the bow), 1.20 tall (length of bow),
-    // 0.15 deep (across the bow's flat face).  Tilted ~25° around Z
-    // so it reads as "drawn back" rather than "standing straight up".
-    const float bowW = 0.04f, bowH = 1.20f, bowD = 0.15f;
-    const float bowX = armGap + 0.10f;          // just outside the right arm
-    const float bowY = armTop - armLength * 0.5f;
-    glm::mat4 bowT = glm::translate(glm::mat4(1.0f), glm::vec3(bowX, bowY, 0.0f));
-    bowT = glm::rotate(bowT, glm::radians(25.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    parts.push_back({
-        Primitives::CreateBox(bowW, bowH, bowD, Palette::Wood),
+        Primitives::CreateBox(0.04f, 1.30f, 0.10f, Palette::Wood),
         bowT
     });
 
-    // --- quiver (strapped to the back, on -X side) ---------------------
-    const float quiverW = 0.10f, quiverH = 0.40f, quiverD = 0.10f;
+    // --- 7. Quiver on Back with Arrows --------------------------------------
+    glm::mat4 quiverT = glm::translate(glm::mat4(1.0f), glm::vec3(0.08f, 1.55f, -0.20f));
+    quiverT = glm::rotate(quiverT, glm::radians(-15.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+    // Quiver body
     parts.push_back({
-        Primitives::CreateBox(quiverW, quiverH, quiverD, Palette::WoodLight),
-        glm::translate(glm::mat4(1.0f),
-                       glm::vec3(-bodyW * 0.5f + quiverW * 0.5f - 0.04f,
-                                 bodyCentre, 0.0f))
+        Primitives::CreateBox(0.14f, 0.55f, 0.14f, Palette::Leather),
+        quiverT
+    });
+    // Arrow flights (feathers) protruding from quiver
+    parts.push_back({
+        Primitives::CreateBox(0.08f, 0.20f, 0.08f, glm::vec3(0.85f, 0.88f, 0.90f)),
+        glm::translate(quiverT, glm::vec3(0.0f, 0.32f, 0.0f))
     });
 }
 
@@ -137,12 +135,10 @@ void Archer::SetPosition(glm::vec3 baseWorld) {
 }
 
 void Archer::Draw(Shader& shader) {
-    // Phase 7: apply the optional Y rotation (e.g. to face the camera) on
-    // top of the base position transform.
     glm::mat4 m = (yawDegrees == 0.0f) ? transform
                                         : glm::rotate(transform,
-                                                                    glm::radians(yawDegrees),
-                                                                    glm::vec3(0.0f, 1.0f, 0.0f));
+                                                      glm::radians(yawDegrees),
+                                                      glm::vec3(0.0f, 1.0f, 0.0f));
     DrawParts(shader, m, parts);
 }
 

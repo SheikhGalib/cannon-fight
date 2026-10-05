@@ -35,6 +35,8 @@
 #include "SignalTower.h"
 #include "Arrow.h"
 #include "Tree.h"
+#include "ShadowMap.h"
+#include "ParticleSystem.h"
 
 using namespace std;
 using namespace glm;
@@ -214,8 +216,16 @@ int main() {
 	// Phong is active by default. Press 'G' in real time to toggle between them.
 	Shader phongShader("lit.vert", "lit.frag");
 	Shader gouraudShader("gouraud.vert", "gouraud.frag");
+	Shader shadowShader("shadow.vert", "shadow.frag");
+	ShadowMap shadowMap;
+	shadowMap.Init(2048);
+	bool useShadowMap = true;     // REAL-TIME PCF SHADOW MAPPING BY DEFAULT!
+
+	ParticleSystem particleSystem;
+	particleSystem.Init();
+
 	bool usePhong = true;         // PHONG SHADING BY DEFAULT!
-	bool useRayTracing = true;    // RAY TRACED SHADOWS BY DEFAULT!
+	bool useRayTracing = false;
 
 	// Light source 3D objects: Sun (day) and Moon (night)
 	Mesh sunCore   = Primitives::CreateSphere(4.5f, 20, 20, Palette::Sun);
@@ -635,13 +645,13 @@ int main() {
 		}
 		gPrev = gNow;
 
-		// --- Input: X or Y toggles Ray Tracing shadows in real time (Update 6) ---
+		// --- Input: X or Y toggles Soft PCF Shadow Mapping in real time ---
 		static bool xPrev = false, yPrev = false;
 		bool xNow = glfwGetKey(window, GLFW_KEY_X) == GLFW_PRESS;
 		bool yNow = glfwGetKey(window, GLFW_KEY_Y) == GLFW_PRESS;
 		if ((xNow && !xPrev) || (yNow && !yPrev)) {
-			useRayTracing = !useRayTracing;
-			std::cout << "[Ray Tracing Shadows] " << (useRayTracing ? "Enabled" : "Disabled") << std::endl;
+			useShadowMap = !useShadowMap;
+			std::cout << "[Shadow Mapping] " << (useShadowMap ? "Soft PCF Shadows (Enabled)" : "Disabled") << std::endl;
 		}
 		xPrev = xNow;
 		yPrev = yNow;
@@ -753,6 +763,8 @@ int main() {
 							forward * Projectile::DefaultSpeed,
 							Projectile::DefaultRadius);
 						cannon.Fire();
+						particleSystem.EmitSmoke(muzzle, forward, 25);
+						particleSystem.EmitSparks(muzzle, forward, 35);
 						seq.state = FireState::CrewReturning;
 						seq.timer = 0.0f;
 					}
@@ -793,13 +805,12 @@ int main() {
 		// --- Update projectiles and check the gate ------------------------
 		for (Projectile& ball : projectiles) {
 			ball.Update(deltaTime, Projectile::Gravity);
-			castle.CheckHit(ball.GetPosition(), ball.GetRadius());
-			// Phase 8: stop on contact with any non-breakable stone
-			// (curtain wall body, corner tower, gatehouse tower).
-			// Previously the ball would happily pass through these
-			// because only the door + FortGate bricks were in the
-			// collision list.
+			if (castle.CheckHit(ball.GetPosition(), ball.GetRadius())) {
+				particleSystem.EmitDebris(ball.GetPosition(), 30);
+				particleSystem.EmitSmoke(ball.GetPosition(), vec3(0.0f, 1.0f, 0.0f), 12);
+			}
 			if (castle.HitsStatic(ball.GetPosition(), ball.GetRadius())) {
+				particleSystem.EmitDebris(ball.GetPosition(), 30);
 				ball.Kill();
 			}
 		}
@@ -1161,7 +1172,65 @@ int main() {
 		vec3 lightDirCurrent = (tod == TimeOfDay::Day)
 			? normalize(vec3(-0.4f, -1.0f, -0.5f))
 			: normalize(vec3(0.6f, -0.2f, -0.4f));
+
+		// Lambda to render scene actors and structures for both shadow depth and main pass
+		auto renderSceneGeometry = [&](Shader& shader) {
+			castle.Draw(shader);
+			robot.Draw(shader);
+			for (SignalTower& t : signalTowers) t.Draw(shader);
+			for (size_t i = 0; i < archers.size(); i++) {
+				if (archerAlive[i]) archers[i].Draw(shader);
+			}
+			for (size_t i = 0; i < wallSoldiers.size(); i++) {
+				if (wallSoldierAlive[i]) wallSoldiers[i].Draw(shader);
+			}
+			for (size_t i = 0; i < army.size(); i++) {
+				if (armyAlive[i] || army[i].GetPitch() != 0.0f) army[i].Draw(shader);
+			}
+			for (size_t i = 0; i < defenders.size(); i++) {
+				if (defenderAlive[i] || defenders[i].GetPitch() != 0.0f) defenders[i].Draw(shader);
+			}
+			for (CampTent& t : tents) t.Draw(shader);
+			for (Tree& t : trees) t.Draw(shader);
+			goldCrest.Draw(shader);
+			crewLeft  .Draw(shader);
+			crewCentre.Draw(shader);
+			crewRight .Draw(shader);
+			leftCannon  .Draw(shader);
+			centreCannon.Draw(shader);
+			rightCannon .Draw(shader);
+			for (Projectile& ball : projectiles) {
+				ball.Draw(shader);
+			}
+		};
+
+		// =====================================================================
+		// Pass 1: Real-time Soft Shadow Mapping (2048x2048 FBO)
+		// =====================================================================
+		mat4 lightSpaceMatrix = shadowMap.ComputeLightSpaceMatrix(lightDirCurrent, kCastleCentre);
+		if (useShadowMap && usePhong) {
+			shadowMap.BindForWriting();
+			glUseProgram(shadowShader.ID);
+			glUniformMatrix4fv(glGetUniformLocation(shadowShader.ID, "lightSpaceMatrix"), 1, GL_FALSE, value_ptr(lightSpaceMatrix));
+
+			renderSceneGeometry(shadowShader);
+
+			int fbw, fbh;
+			glfwGetFramebufferSize(window, &fbw, &fbh);
+			shadowMap.Unbind(fbw, fbh);
+		}
+
+		// =====================================================================
+		// Pass 2: Main Render Pass (Hemispheric Ambient, PCF, Multi-Lights, Materials)
+		// =====================================================================
+		glUseProgram(activeShader.ID);
+
+		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, value_ptr(view));
+		glUniformMatrix4fv(projLoc, 1, GL_FALSE, value_ptr(projMatrix));
 		glUniform3fv(lightDirLoc, 1, value_ptr(lightDirCurrent));
+		if (viewPosLoc != -1) {
+			glUniform3fv(viewPosLoc, 1, value_ptr(camPos));
+		}
 
 		float ambStr = (tod == TimeOfDay::Day) ? 0.35f : 0.15f;
 		if (ambStrLoc != -1) {
@@ -1170,6 +1239,56 @@ int main() {
 		if (isSunLoc != -1) {
 			glUniform1i(isSunLoc, 0);
 		}
+
+		// Bind shadow map texture to slot 1
+		shadowMap.BindDepthTexture(GL_TEXTURE1);
+		glUniform1i(glGetUniformLocation(activeShader.ID, "shadowMap"), 1);
+		glUniform1i(glGetUniformLocation(activeShader.ID, "useShadowMap"), useShadowMap ? 1 : 0);
+		glUniformMatrix4fv(glGetUniformLocation(activeShader.ID, "lightSpaceMatrix"), 1, GL_FALSE, value_ptr(lightSpaceMatrix));
+
+		// Multi-Light System: Point Lights (gatehouse torches, signal towers, cannon muzzle flashes)
+		std::vector<vec3> pLightPos;
+		std::vector<vec3> pLightCol;
+
+		float flickerA = 0.85f + 0.15f * std::sin(float(glfwGetTime()) * 11.0f);
+		float flickerB = 0.85f + 0.15f * std::sin(float(glfwGetTime()) * 13.5f + 1.4f);
+		float flameIntensity = (tod == TimeOfDay::Night ? 2.2f : 1.0f);
+
+		// Castle gatehouse braziers
+		pLightPos.push_back(vec3(0.0f, 5.8f, -3.75f));
+		pLightCol.push_back(vec3(1.0f, 0.55f, 0.15f) * flickerA * flameIntensity);
+		pLightPos.push_back(vec3(0.0f, 5.8f, +3.75f));
+		pLightCol.push_back(vec3(1.0f, 0.55f, 0.15f) * flickerB * flameIntensity);
+
+		// Riverside signal tower braziers
+		if (signalTowers.size() >= 2) {
+			pLightPos.push_back(vec3(-16.0f, 6.2f, -30.0f));
+			pLightCol.push_back(vec3(1.0f, 0.50f, 0.12f) * flickerA * flameIntensity);
+			pLightPos.push_back(vec3(+8.0f, 6.2f, +30.0f));
+			pLightCol.push_back(vec3(1.0f, 0.50f, 0.12f) * flickerB * flameIntensity);
+		}
+
+		// Cannon muzzle flashes
+		if (fireLeft.state == FireState::CrewReturning || fireLeft.state == FireState::Lighting) {
+			pLightPos.push_back(leftCannon.GetMuzzleWorldPosition());
+			pLightCol.push_back(vec3(2.5f, 1.8f, 0.5f));
+		}
+		if (fireCentre.state == FireState::CrewReturning || fireCentre.state == FireState::Lighting) {
+			pLightPos.push_back(centreCannon.GetMuzzleWorldPosition());
+			pLightCol.push_back(vec3(2.5f, 1.8f, 0.5f));
+		}
+		if (fireRight.state == FireState::CrewReturning || fireRight.state == FireState::Lighting) {
+			pLightPos.push_back(rightCannon.GetMuzzleWorldPosition());
+			pLightCol.push_back(vec3(2.5f, 1.8f, 0.5f));
+		}
+
+		int numPL = std::min((int)pLightPos.size(), 8);
+		glUniform1i(glGetUniformLocation(activeShader.ID, "numPointLights"), numPL);
+		if (numPL > 0) {
+			glUniform3fv(glGetUniformLocation(activeShader.ID, "pointLightPos"), numPL, value_ptr(pLightPos[0]));
+			glUniform3fv(glGetUniformLocation(activeShader.ID, "pointLightColor"), numPL, value_ptr(pLightCol[0]));
+		}
+		glUniform1i(glGetUniformLocation(activeShader.ID, "isNight"), (tod == TimeOfDay::Night) ? 1 : 0);
 
 		// Upload ray tracing obstacles when using Phong shader
 		if (usePhong) {
@@ -1227,76 +1346,16 @@ int main() {
 		glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(groundMatrix));
 		ground.Draw();
 
-		// River goes on top of the ground so its surface is visible in
-		// the river footprint. Drawn before the castle so the moat can
-		// still occlude the bits inside the compound.
 		river.Draw(activeShader);
-
-		// Distant scenery: drawn before the castle so the castle's
-		// towers + walls occlude the parts that fall inside the
-		// compound's footprint (otherwise the mountains visually
-		// "stick through" the castle).
 		scenery.Draw(activeShader);
-
-		// Riverside signal towers: drawn after the scenery so
-		// they sit on top of the grass/water plane, but before
-		// the castle so they don't accidentally occlude it.
-		for (SignalTower& t : signalTowers) t.Draw(activeShader);
-
-		// Sky clouds: drift high above the scene; drawn after the
-		// castle so they sit on top of the towers visually (and
-		// don't get occluded by them).
 		skyClouds.Draw(activeShader);
 
-		castle.Draw(activeShader);
-		robot.Draw(activeShader);
+		// Draw all scene actors & structures
+		renderSceneGeometry(activeShader);
 
-		// Archers stand on top of towers - draw after the castle so
-		// they appear in front of any tower silhouette behind them.
-		// Skip dead archers (and archers whose towers were destroyed).
-		for (size_t i = 0; i < archers.size(); i++) {
-			if (archerAlive[i]) archers[i].Draw(activeShader);
-		}
-
-		// Front curtain wall defenders (Update 4 and Update 2):
-		// Skip soldiers whose front wall segment collapsed.
-		for (size_t i = 0; i < wallSoldiers.size(); i++) {
-			if (wallSoldierAlive[i]) wallSoldiers[i].Draw(activeShader);
-		}
-
-		// Army in the back / courtyard: draw living and fallen casualties on ground
-		for (size_t i = 0; i < army.size(); i++) {
-			if (armyAlive[i] || army[i].GetPitch() != 0.0f) army[i].Draw(activeShader);
-		}
-
-		// Castle interior defenders: draw living and fallen casualties on ground
-		for (size_t i = 0; i < defenders.size(); i++) {
-			if (defenderAlive[i] || defenders[i].GetPitch() != 0.0f) defenders[i].Draw(activeShader);
-		}
-
-		// Camp tents in the distance.
-		for (CampTent& t : tents) t.Draw(activeShader);
-
-		// Phase 9: trees in the safe zones (sides + back of the
-		// scene).  Drawn after the tents and before the cannons so
-		// the cannon crew / carriage naturally occlude any trees
-		// that drifted into the foreground.
-		for (Tree& t : trees) t.Draw(activeShader);
-
-		// Gold crest inside the castle compound.
-		goldCrest.Draw(activeShader);
-
-		// Cannon crew next to their cannons - draw before the cannons
-		// so the cannon carriage hides their legs (they're standing
-		// behind it).
-		crewLeft  .Draw(activeShader);
-		crewCentre.Draw(activeShader);
-		crewRight .Draw(activeShader);
-
-		// Three cannons side by side on the moat-far side.
-		leftCannon  .Draw(activeShader);
-		centreCannon.Draw(activeShader);
-		rightCannon .Draw(activeShader);
+		// Dynamic FX: Smoke, sparks, debris
+		particleSystem.Update(deltaTime);
+		particleSystem.Draw(activeShader, view, projMatrix);
 
 		// Visual feedback for selected cannons: a thin yellow parabolic
 		// arc + a marker at the predicted hit point.  Phase 8 replaces
@@ -1383,9 +1442,7 @@ int main() {
 			aimDotMesh.Draw();
 		}
 
-		for (Projectile& ball : projectiles) {
-			ball.Draw(activeShader);
-		}
+
 
 		// Phase 8: arrows in flight (only used during battle sim).
 		for (Arrow& a : arrows) a.Draw(activeShader);

@@ -4,101 +4,185 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <glad/glad.h>
+#include <cmath>
 
 Soldier::Soldier(glm::vec3 baseWorld, glm::vec3 bodyColour)
     : transform(glm::translate(glm::mat4(1.0f), baseWorld))
 {
-    // Same detailed-medieval layout as Archer (legs/body/paultrons/head/
-    // helmet/nose-guard/arms), but no bow or quiver. Instead a short
-    // sword at the right hip (handle + blade).
-    //
-    // All proportions are identical to Archer so the two figures look
-    // like the same "race" of soldier, just with different equipment.
+    // =========================================================================
+    // Realistic Anatomically-Proportioned Medieval Armored Soldier (~1.82 m)
+    // 7.5 heads ratio, articulated limbs, steel breastplate, pauldrons,
+    // sallet helmet, leather belt with brass buckle, arming sword, and shield.
+    // =========================================================================
 
-    // --- legs (chainmail) -----------------------------------------------
-    const float legRadius = 0.12f;
-    const float legHeight = 1.20f;
-    const float legGap    = 0.20f;
+    const float legGap = 0.18f;
+
+    // --- 1. Feet & Leather Boots (y = 0.00 to 0.22) --------------------------
+    for (float x : { -legGap, +legGap }) {
+        // Boot foot block with slight forward toe extension
+        parts.push_back({
+            Primitives::CreateBox(0.18f, 0.16f, 0.28f, Palette::DarkIron),
+            glm::translate(glm::mat4(1.0f), glm::vec3(x, 0.08f, 0.04f))
+        });
+    }
+
+    // --- 2. Lower Legs: Steel Greaves over Chainmail (y = 0.18 to 0.68) ------
     for (float x : { -legGap, +legGap }) {
         parts.push_back({
-            Primitives::CreateCylinder(legRadius, legHeight, 14, Palette::DarkIron,
-                                       /*centered=*/false),
-            glm::translate(glm::mat4(1.0f), glm::vec3(x, legHeight * 0.5f, 0.0f))
+            Primitives::CreateCylinder(0.11f, 0.50f, 14, Palette::Iron, /*centered=*/false),
+            glm::translate(glm::mat4(1.0f), glm::vec3(x, 0.18f, 0.0f))
         });
-    }
-
-    // --- body (jerkin) --------------------------------------------------
-    const float bodyW = 0.55f, bodyH = 0.85f, bodyD = 0.40f;
-    const float bodyBottom = legHeight;
-    const float bodyCentre = bodyBottom + bodyH * 0.5f;
-
-    parts.push_back({
-        Primitives::CreateBox(bodyW, bodyH, bodyD, bodyColour),
-        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, bodyCentre, 0.0f))
-    });
-
-    // --- pauldrons ----------------------------------------------------
-    const float paultronW = 0.22f, paultronH = 0.10f, paultronD = 0.22f;
-    const float paultronY = bodyBottom + bodyH - paultronH * 0.5f;
-    const float paultronX = bodyW * 0.5f + paultronW * 0.4f;
-    for (float x : { -paultronX, +paultronX }) {
+        // Knee poleyn (steel knee cop)
         parts.push_back({
-            Primitives::CreateBox(paultronW, paultronH, paultronD, bodyColour),
-            glm::translate(glm::mat4(1.0f), glm::vec3(x, paultronY, 0.0f))
+            Primitives::CreateSphere(0.13f, 10, 10, Palette::Iron),
+            glm::translate(glm::mat4(1.0f), glm::vec3(x, 0.68f, 0.03f))
         });
     }
 
-    // --- arms ---------------------------------------------------------
-    const float armRadius = 0.08f;
-    const float armLength = 0.90f;
-    const float armTop    = bodyBottom + bodyH * 0.85f;
-    const float armGap    = bodyW * 0.5f + armRadius * 0.5f;
-    for (float x : { -armGap, +armGap }) {
+    // --- 3. Upper Legs: Chausses / Quilted Thighs (y = 0.68 to 1.10) --------
+    for (float x : { -legGap, +legGap }) {
         parts.push_back({
-            Primitives::CreateCylinder(armRadius, armLength, 12, bodyColour,
-                                       /*centered=*/false),
-            glm::translate(glm::mat4(1.0f), glm::vec3(x, armTop - armLength * 0.5f, 0.0f))
+            Primitives::CreateCylinder(0.125f, 0.42f, 14, Palette::DarkIron, /*centered=*/false),
+            glm::translate(glm::mat4(1.0f), glm::vec3(x, 0.68f, 0.0f))
         });
     }
 
-    // --- head (skin) --------------------------------------------------
-    const float headW = 0.30f, headH = 0.35f, headD = 0.30f;
-    const float headBottom = bodyBottom + bodyH;
-    const float headCentre = headBottom + headH * 0.5f;
+    // --- 4. Pelvis & Tunic Faulds (y = 1.05 to 1.30) -------------------------
+    // Flared quilted tunic skirts in uniform color
     parts.push_back({
-        Primitives::CreateBox(headW, headH, headD, Palette::Skin),
-        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, headCentre, 0.0f))
+        Primitives::CreateBox(0.52f, 0.26f, 0.36f, bodyColour),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.18f, 0.0f))
     });
 
-    // --- helmet + nose-guard -----------------------------------------
-    const float helmetR = 0.22f;
-    const float helmetH = 0.28f;
+    // --- 5. Leather Belt & Brass Buckle (y = 1.28 to 1.35) -------------------
     parts.push_back({
-        Primitives::CreateCone(helmetR, helmetR * 0.6f, helmetH, 10, Palette::DarkIron,
-                               /*centered=*/false, /*yOffset=*/0.0f),
-        glm::translate(glm::mat4(1.0f),
-                       glm::vec3(0.0f, headBottom + headH + helmetH * 0.5f, 0.0f))
+        Primitives::CreateBox(0.54f, 0.07f, 0.38f, Palette::Leather),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.315f, 0.0f))
     });
+    // Golden brass buckle at front
     parts.push_back({
-        Primitives::CreateBox(0.04f, 0.10f, 0.08f, Palette::DarkIron),
-        glm::translate(glm::mat4(1.0f),
-                       glm::vec3(headW * 0.5f + 0.02f, headCentre, 0.0f))
+        Primitives::CreateBox(0.10f, 0.08f, 0.04f, Palette::Brass),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.315f, 0.20f))
     });
 
-    // --- sword (right hip) --------------------------------------------
-    // Two boxes at the right hip:
-    //   * handle: 0.05 x 0.15 x 0.05 in Wood / Leather
-    //   * blade:  0.05 x 0.55 x 0.05 in Iron
-    // Sits just outside the right arm so it doesn't clip the body.
-    const float swordX = armGap + 0.05f;
-    const float swordY = bodyBottom + 0.20f;       // bottom of the body box
+    // --- 6. Torso: Steel Breastplate over Gambeson (y = 1.32 to 1.74) --------
+    // Main breastplate body
     parts.push_back({
-        Primitives::CreateBox(0.05f, 0.15f, 0.05f, Palette::Leather),
-        glm::translate(glm::mat4(1.0f), glm::vec3(swordX, swordY + 0.075f, 0.0f))
+        Primitives::CreateBox(0.50f, 0.42f, 0.34f, Palette::Iron),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.53f, 0.0f))
     });
+    // Tapered chest ridge (plackart central rib)
     parts.push_back({
-        Primitives::CreateBox(0.05f, 0.55f, 0.05f, Palette::Iron),
-        glm::translate(glm::mat4(1.0f), glm::vec3(swordX, swordY + 0.15f + 0.275f, 0.0f))
+        Primitives::CreateBox(0.12f, 0.38f, 0.37f, Palette::Iron),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.54f, 0.0f))
+    });
+
+    // --- 7. Neck: Chainmail Coif / Gorget (y = 1.70 to 1.78) -----------------
+    parts.push_back({
+        Primitives::CreateCylinder(0.14f, 0.10f, 12, Palette::DarkIron, /*centered=*/false),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.72f, 0.0f))
+    });
+
+    // --- 8. Head & Face (y = 1.76 to 2.02) -----------------------------------
+    parts.push_back({
+        Primitives::CreateBox(0.24f, 0.26f, 0.24f, Palette::Skin),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.89f, 0.0f))
+    });
+
+    // --- 9. Medieval Sallet Helmet (Crown, Brow Ridge & Visor Slit) ----------
+    // Helmet dome crown
+    parts.push_back({
+        Primitives::CreateCone(0.20f, 0.12f, 0.22f, 12, Palette::Iron, /*centered=*/false),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.98f, 0.0f))
+    });
+    // Helmet brow ridge / flared brim
+    parts.push_back({
+        Primitives::CreateBox(0.28f, 0.07f, 0.28f, Palette::Iron),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.96f, 0.01f))
+    });
+    // Visor dark eye-slit / nasal guard
+    parts.push_back({
+        Primitives::CreateBox(0.18f, 0.035f, 0.06f, Palette::DarkIron),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.91f, 0.12f))
+    });
+
+    // --- 10. Articulated Pauldrons (Shoulder Guards with Brass Trim) ---------
+    const float shoulderX = 0.31f;
+    const float shoulderY = 1.66f;
+    for (float x : { -shoulderX, +shoulderX }) {
+        // Steel pauldron plate
+        parts.push_back({
+            Primitives::CreateBox(0.20f, 0.12f, 0.24f, Palette::Iron),
+            glm::translate(glm::mat4(1.0f), glm::vec3(x, shoulderY, 0.0f))
+        });
+        // Brass border rim
+        parts.push_back({
+            Primitives::CreateBox(0.21f, 0.03f, 0.25f, Palette::Brass),
+            glm::translate(glm::mat4(1.0f), glm::vec3(x, shoulderY - 0.04f, 0.0f))
+        });
+    }
+
+    // --- 11. Arms: Sleeves, Steel Vambraces & Gauntlets ----------------------
+    const float armX = 0.32f;
+    for (float x : { -armX, +armX }) {
+        // Upper arm (sleeved tunic)
+        parts.push_back({
+            Primitives::CreateCylinder(0.08f, 0.32f, 12, bodyColour, /*centered=*/false),
+            glm::translate(glm::mat4(1.0f), glm::vec3(x, 1.38f, 0.0f))
+        });
+        // Forearm (steel vambrace armor)
+        parts.push_back({
+            Primitives::CreateCylinder(0.075f, 0.30f, 12, Palette::Iron, /*centered=*/false),
+            glm::translate(glm::mat4(1.0f), glm::vec3(x, 1.10f, 0.0f))
+        });
+        // Gauntlet (hand)
+        parts.push_back({
+            Primitives::CreateBox(0.10f, 0.11f, 0.11f, Palette::DarkIron),
+            glm::translate(glm::mat4(1.0f), glm::vec3(x, 1.04f, 0.0f))
+        });
+    }
+
+    // --- 12. Heraldic Heater Shield on Left Arm ------------------------------
+    const float shieldX = -armX - 0.10f;
+    const float shieldY = 1.34f;
+    // Wooden shield face in uniform heraldic color
+    parts.push_back({
+        Primitives::CreateBox(0.05f, 0.65f, 0.44f, bodyColour),
+        glm::translate(glm::mat4(1.0f), glm::vec3(shieldX, shieldY, 0.08f))
+    });
+    // Dark iron rim border
+    parts.push_back({
+        Primitives::CreateBox(0.06f, 0.68f, 0.46f, Palette::DarkIron),
+        glm::translate(glm::mat4(1.0f), glm::vec3(shieldX - 0.005f, shieldY, 0.08f))
+    });
+    // Golden central shield boss (reinforcing dome)
+    parts.push_back({
+        Primitives::CreateSphere(0.11f, 10, 10, Palette::Brass),
+        glm::translate(glm::mat4(1.0f), glm::vec3(shieldX - 0.035f, shieldY, 0.08f))
+    });
+
+    // --- 13. Detailed Steel Arming Sword at Right Side -----------------------
+    const float swordX = armX + 0.10f;
+    const float swordY = 1.25f;
+    // Tapered steel blade
+    parts.push_back({
+        Primitives::CreateBox(0.03f, 0.70f, 0.07f, Palette::Iron),
+        glm::translate(glm::mat4(1.0f), glm::vec3(swordX, swordY - 0.20f, 0.0f))
+    });
+    // Crossguard bar
+    parts.push_back({
+        Primitives::CreateBox(0.05f, 0.04f, 0.24f, Palette::Iron),
+        glm::translate(glm::mat4(1.0f), glm::vec3(swordX, swordY + 0.16f, 0.0f))
+    });
+    // Leather grip handle
+    parts.push_back({
+        Primitives::CreateCylinder(0.025f, 0.14f, 8, Palette::Leather, /*centered=*/false),
+        glm::translate(glm::mat4(1.0f), glm::vec3(swordX, swordY + 0.18f, 0.0f))
+    });
+    // Golden brass pommel button
+    parts.push_back({
+        Primitives::CreateSphere(0.045f, 8, 8, Palette::Brass),
+        glm::translate(glm::mat4(1.0f), glm::vec3(swordX, swordY + 0.33f, 0.0f))
     });
 }
 
@@ -108,19 +192,26 @@ void Soldier::SetPosition(glm::vec3 baseWorld) {
 
 void Soldier::Draw(Shader& shader) {
     glm::mat4 m = transform;
+    if (attackOffset != 0.0f) {
+        float rad = glm::radians(yawDegrees);
+        m = glm::translate(m, glm::vec3(std::cos(rad) * attackOffset, 0.0f, std::sin(rad) * attackOffset));
+    }
+    if (pitchDegrees != 0.0f) {
+        // Casualties pivot flat to the ground (pitch = -90 deg)
+        m = glm::rotate(m, glm::radians(pitchDegrees), glm::vec3(0.0f, 0.0f, 1.0f));
+    }
     if (yawDegrees != 0.0f) {
         m = glm::rotate(m, glm::radians(yawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
     }
-    if (attackOffset != 0.0f) {
-        m = glm::translate(m, glm::vec3(attackOffset, 0.0f, 0.0f));
+
+    GLuint modelLoc = glGetUniformLocation(shader.ID, "model");
+    for (Part& p : parts) {
+        glm::mat4 partM = m * p.local;
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(partM));
+        p.mesh.Draw();
     }
-    if (pitchDegrees != 0.0f) {
-        // Fall flat onto ground when dead
-        m = glm::rotate(m, glm::radians(pitchDegrees), glm::vec3(0.0f, 0.0f, 1.0f));
-    }
-    DrawParts(shader, m, parts);
 }
 
 void Soldier::Delete() {
-    DeleteParts(parts);
+    for (Part& p : parts) p.mesh.Delete();
 }
