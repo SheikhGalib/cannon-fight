@@ -104,27 +104,6 @@ CornerTower::CornerTower(glm::vec3 baseCentre,
         baseCentre.x + halfSide - merlonDepth * 0.5f, merlonY, baseCentre.z - halfSide,
         side, merlonW, parapetH, merlonDepth, gap, Palette::Stone);
     for (auto& p : rightParts) parts.push_back(std::move(p));
-
-    // --- flagpole + flag on top -----------------------------------------
-    const float poleW = 0.07f;
-    const float poleBaseY = bodyH + parapetH;
-    const float poleTopY = poleBaseY + flagpoleH;
-    parts.push_back({
-        Primitives::CreateBox(poleW, flagpoleH, poleW, Palette::Iron),
-        glm::translate(glm::mat4(1.0f),
-            glm::vec3(baseCentre.x, poleBaseY + flagpoleH * 0.5f, baseCentre.z))
-    });
-
-    const float flagW = 1.00f;
-    const float flagH = 0.55f;
-    const float flagD = 0.05f;
-    const float flagY = poleTopY - flagH * 0.5f - 0.05f;
-    parts.push_back({
-        Primitives::CreateBox(flagW, flagH, flagD, Palette::Wood),
-        glm::translate(glm::mat4(1.0f),
-            glm::vec3(baseCentre.x + flagW * 0.5f + poleW * 0.5f, flagY,
-                      baseCentre.z))
-    });
 }
 
 bool CornerTower::CheckHit(glm::vec3 sphereCentre, float sphereRadius) {
@@ -135,7 +114,7 @@ bool CornerTower::CheckHit(glm::vec3 sphereCentre, float sphereRadius) {
         sphereCentre.z - std::fmax(centre.z - half.z, std::fmin(sphereCentre.z, centre.z + half.z))
     );
     if (glm::dot(d, d) <= sphereRadius * sphereRadius) {
-        health -= 0.20f;
+        health -= 0.34f; // 3 cannon shots break the tower!
         float t = glm::clamp(1.0f - health, 0.0f, 1.0f);
         glm::vec3 newColour = Palette::Stone * (1.0f - t) + Palette::StoneDark * t;
         parts[0].mesh.Delete();

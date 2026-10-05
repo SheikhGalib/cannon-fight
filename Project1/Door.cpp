@@ -106,7 +106,7 @@ Door::Door(glm::vec3 centreWorld,
 // the threshold.  After the initial kick, gravity (handled implicitly
 // via the angular velocity tipping it forward) carries it the rest of
 // the way.
-static const float kDamagePerHit         = 0.25f;  // 25% per shot
+static const float kDamagePerHit         = 0.50f;  // 50% per shot -> 2 shots break the door!
 static const float kTiltPerDamageFraction = 15.0f;  // deg at 100% damage
 static const float kHitSpinY             = 6.5f;   // rad / sec around Y
 static const float kHitPitchX            = -1.2f;  // rad / sec around X (top falls +X)

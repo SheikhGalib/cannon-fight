@@ -113,29 +113,6 @@ Tower::Tower(glm::vec3 baseCentre,
         side,
         merlonW, parapetH, merlonDepth, gap, Palette::Stone);
     for (auto& p : rightParts) parts.push_back(std::move(p));
-
-    // --- flagpole + flag on top ------------------------------------------
-    // Pole: thin vertical box, dark iron.
-    const float poleW = 0.05f;
-    const float poleBaseY = bodyH + parapetH;
-    const float poleTopY = poleBaseY + flagpoleH;
-    parts.push_back({
-        Primitives::CreateBox(poleW, flagpoleH, poleW, Palette::Iron),
-        glm::translate(glm::mat4(1.0f),
-            glm::vec3(baseCentre.x, poleBaseY + flagpoleH * 0.5f, baseCentre.z))
-    });
-
-    // Flag: a thin horizontal slab attached to the pole near its top.
-    // Uses Palette::Wood (the warm brown) as a stand-in "red banner" colour.
-    const float flagW = 0.80f;
-    const float flagH = 0.45f;
-    const float flagD = 0.04f;
-    const float flagY = poleTopY - flagH * 0.5f - 0.05f;
-    parts.push_back({
-        Primitives::CreateBox(flagW, flagH, flagD, Palette::Wood),
-        glm::translate(glm::mat4(1.0f),
-            glm::vec3(baseCentre.x + flagW * 0.5f + poleW * 0.5f, flagY, baseCentre.z))
-    });
 }
 
 bool Tower::CheckHit(glm::vec3 sphereCentre, float sphereRadius) {
@@ -146,7 +123,7 @@ bool Tower::CheckHit(glm::vec3 sphereCentre, float sphereRadius) {
         sphereCentre.z - std::fmax(centre.z - half.z, std::fmin(sphereCentre.z, centre.z + half.z))
     );
     if (glm::dot(d, d) <= sphereRadius * sphereRadius) {
-        health -= 0.20f;
+        health -= 0.34f; // 3 cannon shots break the tower!
         float t = glm::clamp(1.0f - health, 0.0f, 1.0f);
         glm::vec3 newColour = Palette::Stone * (1.0f - t) + Palette::StoneDark * t;
         parts[0].mesh.Delete();

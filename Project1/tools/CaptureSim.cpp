@@ -154,7 +154,17 @@ int main() {
     Cannon leftCannon  (vec3(cannonX, 0.0f,  cannonSpacing));
     Cannon centreCannon(vec3(cannonX, 0.0f,  0.0f));
     Cannon rightCannon (vec3(cannonX, 0.0f, -cannonSpacing));
-    centreCannon.Elevate(8.0f);
+
+    // Centre cannon aims directly at the wooden door (x = 0, z = 0)
+    centreCannon.Elevate(10.0f);
+
+    // Left cannon aims at the front left wall (z = +7.5)
+    leftCannon.Elevate(13.0f);
+    leftCannon.Yaw(19.0f);
+
+    // Right cannon aims at the front right wall (z = -7.5)
+    rightCannon.Elevate(13.0f);
+    rightCannon.Yaw(-19.0f);
 
     CompoundCastle castle(vec3(12.0f, 0.0f, 0.0f));
 
@@ -284,6 +294,7 @@ int main() {
     const float kArcherFirePeriod = 1.6f;
     float cannonAutoFireTimer = 0.0f;
     const float cannonAutoFirePeriod = 1.2f;
+    int   cannonFireStep = 0;
 
     std::vector<vec3> armyOriginalPos(army.size());
     for (size_t i = 0; i < army.size(); i++) armyOriginalPos[i] = army[i].GetPosition();
@@ -393,12 +404,15 @@ int main() {
             cannonAutoFireTimer += dt;
             if (cannonAutoFireTimer >= cannonAutoFirePeriod) {
                 cannonAutoFireTimer = 0.0f;
-                Cannon*  cs[3]    = { &leftCannon, &centreCannon, &rightCannon };
+                // One cannon shoots door (centre, 1), one shoots left wall (0), one shoots right wall (2)
+                static const int kFireOrder[3] = { 1, 0, 2 };
                 FireSequence* sq[3] = { &fireLeft, &fireCentre, &fireRight };
-                for (int i = 0; i < 3; i++) {
-                    if (sq[i]->state == FireState::Idle) {
-                        sq[i]->state = FireState::CrewWalking;
-                        sq[i]->timer = 0.0f;
+                for (int attempt = 0; attempt < 3; attempt++) {
+                    int targetIdx = kFireOrder[(cannonFireStep + attempt) % 3];
+                    if (sq[targetIdx]->state == FireState::Idle) {
+                        sq[targetIdx]->state = FireState::CrewWalking;
+                        sq[targetIdx]->timer = 0.0f;
+                        cannonFireStep = (cannonFireStep + attempt + 1) % 3;
                         break;
                     }
                 }

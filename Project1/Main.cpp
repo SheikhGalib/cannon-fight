@@ -248,9 +248,16 @@ int main() {
 	Cannon leftCannon  (vec3(cannonX, 0.0f,  cannonSpacing));
 	Cannon rightCannon (vec3(cannonX, 0.0f, -cannonSpacing));
 
-	// Phase 5: 12 deg default + 8 deg tweak = 20 deg total. At v=14 m/s
-	// and 20 deg, range is ~14.4 m which lines up with cannon-to-door.
-	centreCannon.Elevate(8.0f);
+	// Centre cannon aims directly at the wooden door (x = 0, z = 0)
+	centreCannon.Elevate(10.0f);
+
+	// Left cannon aims at the front left wall (z = +7.5)
+	leftCannon.Elevate(13.0f);
+	leftCannon.Yaw(19.0f);
+
+	// Right cannon aims at the front right wall (z = -7.5)
+	rightCannon.Elevate(13.0f);
+	rightCannon.Yaw(-19.0f);
 
 	// --- Phase 5: full compound castle (4 corners + curtains + gate) ---
 	CompoundCastle castle(vec3(12.0f, 0.0f, 0.0f));
@@ -526,6 +533,7 @@ int main() {
 
 	float cannonAutoFireTimer = 0.0f;
 	static constexpr float cannonAutoFirePeriod = 1.2f;
+	int   cannonFireStep = 0;
 
 	std::vector<Arrow> arrows;
 
@@ -673,6 +681,8 @@ int main() {
 			std::fill(archerAlive.begin(), archerAlive.end(), true);
 			nextReplacementDefender = 0;
 			goldCrest.SetVictorious(false);
+			cannonFireStep = 0;
+			cannonAutoFireTimer = 0.0f;
 		}
 		tPrev = tNow;
 
@@ -844,12 +854,15 @@ int main() {
 			cannonAutoFireTimer += deltaTime;
 			if (cannonAutoFireTimer >= 1.2f) {
 				cannonAutoFireTimer = 0.0f;
-				Cannon*  cannons[3]   = { &leftCannon, &centreCannon, &rightCannon };
-				FireSequence* seqs[3] = { &fireLeft,   &fireCentre,   &fireRight  };
-				for (int i = 0; i < 3; i++) {
-					if (seqs[i]->state == FireState::Idle) {
-						seqs[i]->state = FireState::CrewWalking;
-						seqs[i]->timer = 0.0f;
+				// One cannon shoots door (centre, 1), one shoots left wall (0), one shoots right wall (2)
+				static const int kFireOrder[3] = { 1, 0, 2 };
+				FireSequence* seqs[3] = { &fireLeft, &fireCentre, &fireRight };
+				for (int attempt = 0; attempt < 3; attempt++) {
+					int targetIdx = kFireOrder[(cannonFireStep + attempt) % 3];
+					if (seqs[targetIdx]->state == FireState::Idle) {
+						seqs[targetIdx]->state = FireState::CrewWalking;
+						seqs[targetIdx]->timer = 0.0f;
+						cannonFireStep = (cannonFireStep + attempt + 1) % 3;
 						break;
 					}
 				}

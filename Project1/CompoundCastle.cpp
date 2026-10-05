@@ -10,12 +10,9 @@
 
 using glm::vec3;
 
-// Phase 9: damage-per-hit tuning for curtain-wall segments.  A direct
-// cannon-ball hit strips 10 % of a segment's health; at 0 the segment
-// is removed and its solidBox is dropped so cannonballs fly through
-// the gap.  Each hit rebuilds the segment's mesh at a darker shade so
-// cumulative damage is visible.
-static const float kWallSegmentDamagePerHit = 0.10f;
+// A direct cannon-ball hit strips 100% of a segment's health so the
+// wall section breaches immediately upon impact.
+static const float kWallSegmentDamagePerHit = 1.0f;
 
 static glm::vec3 WallSegmentDamageColour(float health) {
     float t = glm::clamp(1.0f - health, 0.0f, 1.0f);
