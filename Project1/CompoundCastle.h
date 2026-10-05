@@ -51,6 +51,12 @@ public:
     // Same breakability interface as Phase 4's Castle.
     bool CheckHit(glm::vec3 sphereCentre, float sphereRadius);
 
+    // Phase 8: sphere-vs-static-AABB collision against every solid
+    // (non-breakable) wall / tower. Returns true if the sphere is in
+    // contact with any of them.  Cannonballs use this to stop on the
+    // stone rather than pass through it.
+    bool HitsStatic(glm::vec3 sphereCentre, float sphereRadius) const;
+
     // Phase 5+: advance any detached door panels one frame (integrates
     // angular velocity + linear velocity so they swing outward and fall).
     void Update(float deltaTime);
@@ -91,6 +97,16 @@ private:
     int curtainSMerlons = 0;
     int curtainWMerlons = 0;
     int curtainEMerlons = 0;
+
+    // Phase 8: AABBs for every solid wall segment. Used by CheckHit()
+    // so cannonballs stop on contact with the stone (instead of
+    // passing through). Each entry is (centreX, centreY, centreZ,
+    // halfX, halfY, halfZ) in world space.
+    struct SolidBox {
+        glm::vec3 centre;
+        glm::vec3 half;
+    };
+    std::vector<SolidBox> solidBoxes;
 
     // Moat water + bridge.
     Water  moat;

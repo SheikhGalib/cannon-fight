@@ -2,6 +2,7 @@
 #include <vector>
 #include <algorithm>
 #include <random>
+#include <cmath>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -22,11 +23,14 @@
 #include "CompoundCastle.h"
 #include "Tower.h"
 #include "Door.h"
-#include "Tree.h"
 #include "Robot.h"
 #include "Archer.h"
 #include "Soldier.h"
 #include "Bridge.h"
+#include "CampTent.h"
+#include "Scenery.h"
+#include "GoldCrest.h"
+#include "Arrow.h"
 
 using namespace std;
 using namespace glm;
@@ -39,7 +43,7 @@ using namespace glm;
 
 static const vec3 kCastleCentre(12.0f, 1.5f, 0.0f);
 static const float kOrbitMinRadius = 8.0f;
-static const float kOrbitMaxRadius = 120.0f;
+static const float kOrbitMaxRadius = 160.0f;
 
 struct OrbitCamera {
     float yaw   = 0.7f;     // radians around Y, 0 = looking down +X
@@ -108,6 +112,24 @@ static void ToggleFullscreen(GLFWwindow* window) {
     }
 }
 
+// === Phase 8: day/night + battle simulation + combat ======================
+// Day/night mode: just two booleans toggled by N.  In night mode the
+// sky and the ambient are darker and the light direction tilts toward
+// the horizon (so the moon is low).
+enum class TimeOfDay { Day, Night };
+
+// Battle simulation: a state machine for the auto-siege.  Pressing B
+// (start) walks through Inactive -> BridgeUp (the defenders raise the
+// drawbridge) -> Defending (archers shoot arrows at the army) ->
+// Advance (cannons fire on the walls, attackers cross the bridge once
+// it's down) -> End.  P toggles pause; R resets back to Inactive.
+enum class BattlePhase { Inactive, BridgeUp, Defending, Advance, End };
+
+// Combat: each archer / defender / army soldier has a tiny health
+// pool.  When health reaches 0 they're "dead" and disappear from the
+// scene.  Arrows check against defender army soldier AABBs.  Bridge
+// breakage is a count of hits remaining.
+
 // === Phase 6: cannon-firing state machine ===================================
 // A cannon is Idle by default. Pressing Space (with the cannon selected)
 // drives it through three timed stages:
@@ -171,9 +193,9 @@ int main() {
 	glfwSetCursorPosCallback(window, OnCursorPos);
 	glfwSetScrollCallback(window, OnScroll);
 
-	Shader shaderProgram("lit.vert", "lit.frag");
+	Shader shaderProgram("gouraud.vert", "gouraud.frag");
 
-	Mesh ground = Primitives::CreatePlane(160.0f, 160.0f, Palette::Grass);
+	Mesh ground = Primitives::CreatePlane(400.0f, 400.0f, Palette::Grass);
 
 	// --- Phase 7: a Z-running river in front of the castle -----------
 	// The river is now a tall thin strip running along Z, sitting just
@@ -203,18 +225,23 @@ int main() {
 	// --- Phase 6: archers on top of the castle towers -----------------
 	// 4 corner towers (each cornerHeight=8 + parapetH=0.7 = 8.7 m up).
 	// 2 gatehouse flanking towers (each bodyH=5 + parapetH=0.6 = 5.6 m up).
-	const float cornerParapetY = 8.0f + 0.7f;
-	const float gatehouseParapetY = 5.0f + 0.6f;
+	// Phase 8 fix: archers should stand on the FLAT tower top (y =
+	// bodyH = 8.0), not on top of the merlons. Merlons sit on the
+	// outside of the parapet, so the centre of the tower top is flat
+	// at y = bodyH. Previously the y was set to bodyH + parapetH which
+	// made the archer float 0.7 m above the flat tower surface.
+	const float cornerTowerTopY = 8.0f;             // flat top, below the merlons
+	const float gatehouseTowerTopY = 5.0f;
 	const float halfCompound = 12.0f;
 
 	std::vector<Archer> archers;
-	archers.emplace_back(vec3(12.0f - halfCompound, cornerParapetY, 0.0f - halfCompound)); // cornerNW archer
-	archers.emplace_back(vec3(12.0f + halfCompound, cornerParapetY, 0.0f - halfCompound)); // cornerNE
-	archers.emplace_back(vec3(12.0f - halfCompound, cornerParapetY, 0.0f + halfCompound)); // cornerSW
-	archers.emplace_back(vec3(12.0f + halfCompound, cornerParapetY, 0.0f + halfCompound)); // cornerSE
+	archers.emplace_back(vec3(12.0f - halfCompound, cornerTowerTopY, 0.0f - halfCompound)); // cornerNW archer
+	archers.emplace_back(vec3(12.0f + halfCompound, cornerTowerTopY, 0.0f - halfCompound)); // cornerNE
+	archers.emplace_back(vec3(12.0f - halfCompound, cornerTowerTopY, 0.0f + halfCompound)); // cornerSW
+	archers.emplace_back(vec3(12.0f + halfCompound, cornerTowerTopY, 0.0f + halfCompound)); // cornerSE
 	// Gatehouse flanking towers at (x = 0, z = ±3.75).
-	archers.emplace_back(vec3(0.0f, gatehouseParapetY, -3.75f));
-	archers.emplace_back(vec3(0.0f, gatehouseParapetY,  3.75f));
+	archers.emplace_back(vec3(0.0f, gatehouseTowerTopY, -3.75f));
+	archers.emplace_back(vec3(0.0f, gatehouseTowerTopY,  3.75f));
 
 	// Phase 7: archers face the camera (default view is south of the
 	// castle looking toward +Z), so each archer yaws 90° to face +Z.
@@ -222,22 +249,24 @@ int main() {
 	for (Archer& a : archers) a.SetYaw(90.0f);
 
 	// --- Phase 6: cannon crew + army ---------------------------------
-	// 3 crew (one per cannon, in warm Copper) plus 15 army (Iron) in a
-	// 5x3 grid behind the cannons.
+	// 3 crew (one per cannon) plus 15 army in a 5x3 grid behind the
+	// cannons.  Phase 8: army / crew now wear the ATTACKER uniform
+	// (dark red) to distinguish them from the DEFENDER soldiers
+	// (dark blue) that the castle archers + interior guards wear.
 	const float crewZOffset = -0.7f;
 	Soldier crewLeft (vec3(cannonX - 1.8f, 0.0f,  cannonSpacing + crewZOffset),
-	                  Palette::Copper);
+	                  Palette::Attacker);
 	Soldier crewCentre(vec3(cannonX - 1.8f, 0.0f,  0.0f + crewZOffset),
-	                  Palette::Copper);
+	                  Palette::Attacker);
 	Soldier crewRight(vec3(cannonX - 1.8f, 0.0f, -cannonSpacing + crewZOffset),
-	                  Palette::Copper);
+	                  Palette::Attacker);
 
 	std::vector<Soldier> army;
 	for (int row = 0; row < 3; row++) {
 		for (int col = 0; col < 5; col++) {
 			float x = cannonX - 6.0f - float(row) * 1.5f;   // 5 columns -> 5 * 1.5 = 7.5 m
 			float z = (float(col) - 2.0f) * 2.0f;          // centred on z = 0
-			army.emplace_back(vec3(x, 0.0f, z), Palette::Iron);
+			army.emplace_back(vec3(x, 0.0f, z), Palette::Attacker);
 		}
 	}
 
@@ -248,6 +277,47 @@ int main() {
 	crewLeft  .SetYaw(0.0f);
 	crewCentre.SetYaw(0.0f);
 	crewRight .SetYaw(0.0f);
+
+	// --- Phase 8: castle interior defenders ----------------------------
+	// A small detachment of defender soldiers (dark blue) standing
+	// inside the compound, near the gold crest.  Used as "backup" by
+	// the auto-replace logic: when an archer on a tower dies, one of
+	// these soldiers walks to the tower and climbs up.
+	std::vector<Soldier> defenders;
+	const float crestX = 12.0f + 4.0f;     // gold crest inside the compound
+	const float crestZ = 0.0f;
+	for (int i = 0; i < 4; i++) {
+		float a = float(i) * 1.7f;
+		defenders.emplace_back(
+			vec3(crestX + std::cos(a) * 2.0f, 0.0f, crestZ + std::sin(a) * 2.0f),
+			Palette::Defender);
+		defenders.back().SetYaw(180.0f);  // face the camera (default south)
+	}
+
+	// --- Phase 8: camp tents behind the army ---------------------------
+	// 6 tents in two rows behind the army formation.  Canvas roof in
+	// TentCloth, wooden base in TentBase.
+	std::vector<CampTent> tents;
+	for (int r = 0; r < 2; r++) {
+		for (int c = 0; c < 3; c++) {
+			float tx = cannonX - 14.0f - float(r) * 2.0f;
+			float tz = (float(c) - 1.0f) * 5.0f;
+			tents.emplace_back(vec3(tx, 0.0f, tz),
+			                    /*baseRadius=*/1.5f, /*roofHeight=*/2.2f,
+			                    Palette::TentCloth, Palette::TentBase);
+		}
+	}
+
+	// --- Phase 8: gold crest inside the castle -------------------------
+	GoldCrest goldCrest(vec3(crestX, 0.0f, crestZ));
+
+	// --- Phase 8: distant mountain / valley scenery --------------------
+	// A ring of low-poly mountains + valleys around the castle so the
+	// canvas reads as "infinite" rather than truncated by the ground
+	// edge.
+	Scenery scenery(vec3(0.0f, 0.0f, 0.0f),
+	                /*innerRadius=*/90.0f, /*outerRadius=*/150.0f,
+	                /*count=*/48);
 
 	// --- Phase 6: per-cannon fire sequence state ---------------------
 	FireSequence fireLeft, fireCentre, fireRight;
@@ -271,48 +341,38 @@ int main() {
 	// single-player-controlled.  -1 = none selected yet.
 	int   activeCannonIdx = -1;
 
-	// --- Phase 6: ~60 trees scattered around the scene ---------------
-	// Uses a deterministic seeded RNG so the layout is reproducible for
-	// screenshots.  Three zones: foreground (between cannons and moat),
-	// behind the castle, far flanks.
-	std::vector<Tree> trees;
-	std::mt19937 rng(12345);
-	auto scatterIn = [&](float xLo, float xHi, float zLo, float zHi,
-	                     int count, float trunkMin, float trunkMax,
-	                     float trunkRMin, float trunkRMax,
-	                     float crownHMin, float crownHMax,
-	                     float crownRMin, float crownRMax) {
-		std::uniform_real_distribution<float> uX(xLo, xHi);
-		std::uniform_real_distribution<float> uZ(zLo, zHi);
-		std::uniform_real_distribution<float> uTrunkH(trunkMin, trunkMax);
-		std::uniform_real_distribution<float> uTrunkR(trunkRMin, trunkRMax);
-		std::uniform_real_distribution<float> uCrownH(crownHMin, crownHMax);
-		std::uniform_real_distribution<float> uCrownR(crownRMin, crownRMax);
-		for (int i = 0; i < count; i++) {
-			trees.emplace_back(vec3(uX(rng), 0.0f, uZ(rng)),
-			                   uTrunkH(rng), uTrunkR(rng),
-			                   uCrownH(rng), uCrownR(rng));
-		}
-	};
-	scatterIn(-35.0f, -5.0f, -22.0f, 22.0f, 15,  // foreground (small/med)
-	          1.5f, 3.0f, 0.15f, 0.28f, 2.0f, 3.5f, 1.0f, 1.7f);
-	scatterIn(20.0f, 60.0f, -28.0f, 28.0f, 25,    // behind castle
-	          2.0f, 3.5f, 0.18f, 0.32f, 2.5f, 4.0f, 1.2f, 2.0f);
-	scatterIn(-70.0f, -35.0f, -30.0f, 30.0f, 12,  // far flank left
-	          1.8f, 3.2f, 0.16f, 0.28f, 2.0f, 3.5f, 1.0f, 1.8f);
-	scatterIn(30.0f, 75.0f, -30.0f, 30.0f, 12,    // far flank right
-	          1.8f, 3.2f, 0.16f, 0.28f, 2.0f, 3.5f, 1.0f, 1.8f);
-
 	// --- The wooden dummy robot inside the castle ------------------------
 	Robot robot(vec3(3.0f, 0.0f, 0.0f));
 
 	std::vector<Projectile> projectiles;
 
+	// --- Phase 8: day/night toggle + battle simulation -----------------
+	TimeOfDay tod = TimeOfDay::Day;
+	BattlePhase battle = BattlePhase::Inactive;
+	bool battlePaused = false;
+	float battleTimer = 0.0f;       // seconds since B was pressed (or since resume)
+	// Per-archer / defender soldier "alive" flags.  True = in scene;
+	// false = dead, draw skipped.  When an archer dies a defender
+	// soldier walks over and climbs the tower.
+	std::vector<bool> archerAlive(archers.size(), true);
+	std::vector<bool> defenderAlive(defenders.size(), true);
+	std::vector<bool> armyAlive(army.size(), true);
+	// Index of the next defender to be promoted to archer when a
+	// tower soldier dies.
+	int nextReplacementDefender = 0;
+	// Cooldown between arrow shots from the archers during the battle
+	// sim.  Each archer fires one arrow every `kArcherFirePeriod`
+	// seconds while alive and the sim is in Defending or Advance.
+	float archerFireTimer = 0.0f;
+	static constexpr float kArcherFirePeriod = 1.6f;
+
+	std::vector<Arrow> arrows;
+
 	// Recompute the projection matrix whenever the window is resized.
 	auto updateProjection = [&]() -> mat4 {
 		int fbw, fbh; glfwGetFramebufferSize(window, &fbw, &fbh);
 		if (fbw == 0 || fbh == 0) fbw = 1, fbh = 1;
-		return perspective(radians(55.0f), float(fbw) / float(fbh), 0.1f, 300.0f);
+		return perspective(radians(55.0f), float(fbw) / float(fbh), 0.1f, 400.0f);
 	};
 	mat4 projMatrix = updateProjection();
 
@@ -321,7 +381,8 @@ int main() {
 	GLuint modelLoc = glGetUniformLocation(shaderProgram.ID, "model");
 	GLuint lightDirLoc = glGetUniformLocation(shaderProgram.ID, "lightDir");
 
-	vec3 lightDir = normalize(vec3(-0.4f, -1.0f, -0.5f));
+	// Phase 8: light direction is recomputed per-frame based on
+	// day/night mode (was a single static value before).
 
 	const float elevationSpeedDegPerSec = 30.0f;
 	const float driveSpeed = 2.0f;
@@ -351,6 +412,32 @@ int main() {
 		if (f11Now && !f11Prev) ToggleFullscreen(window);
 		f11Prev = f11Now;
 
+		// --- Input: N toggles day / night --------------------------------
+		static bool nPrev = false;
+		bool nNow = glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS;
+		if (nNow && !nPrev) {
+			tod = (tod == TimeOfDay::Day) ? TimeOfDay::Night : TimeOfDay::Day;
+		}
+		nPrev = nNow;
+
+		// --- Input: B starts the battle simulation -----------------------
+		static bool bPrev = false;
+		bool bNow = glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS;
+		if (bNow && !bPrev && battle == BattlePhase::Inactive) {
+			battle = BattlePhase::BridgeUp;
+			battleTimer = 0.0f;
+			battlePaused = false;
+		}
+		bPrev = bNow;
+
+		// --- Input: P toggles pause on the battle sim --------------------
+		static bool pPrev = false;
+		bool pNow = glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS;
+		if (pNow && !pPrev && battle != BattlePhase::Inactive) {
+			battlePaused = !battlePaused;
+		}
+		pPrev = pNow;
+
 		// --- Input: 1/2/3 toggle individual cannon selection -------------
 		static bool selPrev[3] = { false, false, false };
 		bool selNow[3];
@@ -376,9 +463,19 @@ int main() {
 		}
 		aPrev = aNow;
 
-		// --- Input: R (HOLD) raises the drawbridge -----------------------
+		// --- Input: R (HOLD) raises the drawbridge (R for "raise") ------
 		bool rNow = glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS;
 		castle.SetBridgeRaised(rNow);
+
+		// --- Input: T restarts the battle sim (R was taken by bridge) -
+		static bool tPrev = false;
+		bool tNow = glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS;
+		if (tNow && !tPrev && battle != BattlePhase::Inactive) {
+			battle = BattlePhase::Inactive;
+			battleTimer = 0.0f;
+			battlePaused = false;
+		}
+		tPrev = tNow;
 
 		// --- Input: arrow / W / S drive the active cannon (if any) ------
 		if (activeCannonIdx >= 0) {
@@ -488,6 +585,14 @@ int main() {
 		for (Projectile& ball : projectiles) {
 			ball.Update(deltaTime, Projectile::Gravity);
 			castle.CheckHit(ball.GetPosition(), ball.GetRadius());
+			// Phase 8: stop on contact with any non-breakable stone
+			// (curtain wall body, corner tower, gatehouse tower).
+			// Previously the ball would happily pass through these
+			// because only the door + FortGate bricks were in the
+			// collision list.
+			if (castle.HitsStatic(ball.GetPosition(), ball.GetRadius())) {
+				ball.Kill();
+			}
 		}
 		projectiles.erase(
 			std::remove_if(projectiles.begin(), projectiles.end(),
@@ -497,18 +602,154 @@ int main() {
 		// --- Update castle (advances door break physics + bridge retract)
 		castle.Update(deltaTime);
 
+		// --- Phase 8: battle simulation + combat ------------------------
+		if (battle != BattlePhase::Inactive && !battlePaused) {
+			battleTimer += deltaTime;
+		}
+		// Bridge: during the BattleUp phase the defenders raise the
+		// drawbridge.  During Advance, the bridge is dropped so the
+		// attackers can cross.  When Inactive we leave the bridge
+		// alone (the user keeps manual control with R).
+		if (battle == BattlePhase::BridgeUp) {
+			castle.SetBridgeRaised(true);
+			// After 2 seconds the archers start shooting.
+			if (battleTimer > 2.0f) {
+				battle = BattlePhase::Defending;
+				battleTimer = 0.0f;
+			}
+		} else if (battle == BattlePhase::Defending) {
+			castle.SetBridgeRaised(true);
+			// 12 seconds of archers shooting arrows at the army.
+			if (battleTimer > 12.0f) {
+				battle = BattlePhase::Advance;
+				battleTimer = 0.0f;
+				castle.SetBridgeRaised(false);
+			}
+		} else if (battle == BattlePhase::Advance) {
+			castle.SetBridgeRaised(false);
+			// 15 seconds of advancing then End.
+			if (battleTimer > 15.0f) {
+				battle = BattlePhase::End;
+				battleTimer = 0.0f;
+				// Decide the winner by who's still standing.
+				int livingAttackers = 0;
+				for (bool a : armyAlive) if (a) ++livingAttackers;
+				int livingDefenders = 0;
+				for (bool a : archerAlive) if (a) ++livingDefenders;
+				for (bool d : defenderAlive) if (d) ++livingDefenders;
+				goldCrest.SetVictorious(livingAttackers > livingDefenders);
+			}
+		} else if (battle == BattlePhase::End) {
+			// Sit on the End state until the user presses T to restart.
+		}
+
+		// Archer arrow fire: every kArcherFirePeriod seconds each
+		// living archer fires one arrow at the closest living army
+		// soldier.
+		if (battle != BattlePhase::Inactive && !battlePaused &&
+		    (battle == BattlePhase::Defending || battle == BattlePhase::Advance)) {
+			archerFireTimer += deltaTime;
+			if (archerFireTimer >= kArcherFirePeriod) {
+				archerFireTimer = 0.0f;
+				for (size_t ai = 0; ai < archers.size(); ai++) {
+					if (!archerAlive[ai]) continue;
+					// Find closest living army soldier.
+					int bestIdx = -1;
+					float bestD2 = 1e9f;
+					vec3 archerPos = archers[ai].GetPosition();
+					for (size_t si = 0; si < army.size(); si++) {
+						if (!armyAlive[si]) continue;
+						vec3 sp = army[si].GetPosition();
+						float d2 = glm::dot(sp - archerPos, sp - archerPos);
+						if (d2 < bestD2) { bestD2 = d2; bestIdx = (int)si; }
+					}
+					if (bestIdx < 0) continue;
+					vec3 target = army[bestIdx].GetPosition();
+					vec3 origin = archerPos + vec3(0.0f, 1.5f, 0.0f);
+					// Aim: simple ballistic - launch at fixed speed and
+					// solve the angle.  We just use a fixed 30° elevation
+					// plus a horizontal aim, which is good enough for the
+					// "feel" the user is asking for.
+					vec3 toT = target - origin;
+					float horiz = length(vec2(toT.x, toT.z));
+					float vy = 5.0f;
+					float vh = 16.0f;
+					vec3 vhVec = (horiz > 1e-3f)
+						? vec3(toT.x, 0.0f, toT.z) / horiz * vh
+						: vec3(0.0f, 0.0f, 0.0f);
+					arrows.emplace_back(origin, vhVec + vec3(0.0f, vy, 0.0f));
+				}
+			}
+		}
+
+		// Update arrows + check army hits.
+		for (Arrow& a : arrows) {
+			a.Update(deltaTime);
+			if (a.IsDead()) continue;
+			// Sphere-vs-soldier-AABB for each living army soldier.
+			vec3 ap = a.GetPosition();
+			for (size_t si = 0; si < army.size(); si++) {
+				if (!armyAlive[si]) continue;
+				vec3 sp = army[si].GetPosition();
+				// Soldier AABB: 0.5 x 2.4 x 0.4 centred on sp.
+				vec3 d = ap - sp;
+				vec3 clamped(
+					std::fmax(-0.25f, std::fmin(d.x, 0.25f)),
+					std::fmax(-1.20f, std::fmin(d.y, 1.20f)),
+					std::fmax(-0.20f, std::fmin(d.z, 0.20f)));
+				vec3 delta = d - clamped;
+				if (glm::dot(delta, delta) <= 0.04f * 0.04f) {
+					armyAlive[si] = false;
+					a.Kill();
+					break;
+				}
+			}
+		}
+		arrows.erase(
+			std::remove_if(arrows.begin(), arrows.end(),
+				[](const Arrow& a) { return a.IsDead(); }),
+			arrows.end());
+
+		// Replacement: if an archer is dead, promote the next
+		// available defender.  Visual: defender is teleported to the
+		// tower top.
+		for (size_t ai = 0; ai < archers.size(); ai++) {
+			if (archerAlive[ai]) continue;
+			while (nextReplacementDefender < (int)defenders.size() &&
+			       !defenderAlive[nextReplacementDefender]) ++nextReplacementDefender;
+			if (nextReplacementDefender < (int)defenders.size()) {
+				defenders[nextReplacementDefender].SetPosition(archers[ai].GetPosition());
+				defenderAlive[nextReplacementDefender] = false;
+				archerAlive[ai] = true;
+				++nextReplacementDefender;
+			}
+		}
+
+		// Update gold crest (pulse when victorious).
+		goldCrest.Update(deltaTime);
+
 		// --- Camera matrix ----------------------------------------------
 		mat4 view = ComputeView();
 		projMatrix = updateProjection();
 
 		// --- Draw ----------------------------------------------------------
-		glClearColor(0.55f, 0.72f, 0.87f, 1.0f);
+		// Phase 8: sky colour depends on day/night.
+		if (tod == TimeOfDay::Day) {
+			glClearColor(0.55f, 0.72f, 0.87f, 1.0f);
+		} else {
+			glClearColor(Palette::NightSky.r, Palette::NightSky.g,
+			             Palette::NightSky.b, 1.0f);
+		}
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		shaderProgram.Activate();
 
 		glUniformMatrix4fv(viewLoc, 1, GL_FALSE, value_ptr(view));
 		glUniformMatrix4fv(projLoc, 1, GL_FALSE, value_ptr(projMatrix));
-		glUniform3fv(lightDirLoc, 1, value_ptr(lightDir));
+		// Light direction: low moon in night, high sun in day.
+		vec3 lightDirCurrent = (tod == TimeOfDay::Day)
+			? normalize(vec3(-0.4f, -1.0f, -0.5f))
+			: normalize(vec3(0.6f, -0.2f, -0.4f));
+		glUniform3fv(lightDirLoc, 1, value_ptr(lightDirCurrent));
 
 		mat4 groundMatrix = translate(mat4(1.0f), vec3(0.0f, -0.01f, 0.0f));
 		glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(groundMatrix));
@@ -519,16 +760,37 @@ int main() {
 		// still occlude the bits inside the compound.
 		river.Draw(shaderProgram);
 
-		for (Tree& t : trees) t.Draw(shaderProgram);
+		// Distant scenery: drawn before the castle so the castle's
+		// towers + walls occlude the parts that fall inside the
+		// compound's footprint (otherwise the mountains visually
+		// "stick through" the castle).
+		scenery.Draw(shaderProgram);
+
 		castle.Draw(shaderProgram);
 		robot.Draw(shaderProgram);
 
 		// Archers stand on top of towers - draw after the castle so
 		// they appear in front of any tower silhouette behind them.
-		for (Archer& a : archers) a.Draw(shaderProgram);
+		// Phase 8: skip dead archers.
+		for (size_t i = 0; i < archers.size(); i++) {
+			if (archerAlive[i]) archers[i].Draw(shaderProgram);
+		}
 
-		// Army in the back.
-		for (Soldier& s : army) s.Draw(shaderProgram);
+		// Army in the back.  Phase 8: skip dead army soldiers.
+		for (size_t i = 0; i < army.size(); i++) {
+			if (armyAlive[i]) army[i].Draw(shaderProgram);
+		}
+
+		// Castle interior defenders.  Skip dead ones.
+		for (size_t i = 0; i < defenders.size(); i++) {
+			if (defenderAlive[i]) defenders[i].Draw(shaderProgram);
+		}
+
+		// Camp tents in the distance.
+		for (CampTent& t : tents) t.Draw(shaderProgram);
+
+		// Gold crest inside the castle compound.
+		goldCrest.Draw(shaderProgram);
 
 		// Cannon crew next to their cannons - draw before the cannons
 		// so the cannon carriage hides their legs (they're standing
@@ -542,42 +804,148 @@ int main() {
 		centreCannon.Draw(shaderProgram);
 		rightCannon .Draw(shaderProgram);
 
-		// Visual feedback for selected cannons: a thin yellow line on the
-		// ground showing where the cannon is pointing.  Phase 7 makes
-		// this an aim line rather than a sphere on the muzzle so the
-		// player can predict where their shot will land.
+		// Visual feedback for selected cannons: a thin yellow parabolic
+		// arc + a marker at the predicted hit point.  Phase 8 replaces
+		// the old "ground line" with an actual projectile preview
+		// computed by stepping the same ballistic equation the real
+		// projectile uses (semi-implicit Euler under gravity).  When
+		// the simulated ball hits a static wall or the ground, the
+		// last point becomes the hit point and a small ring is drawn
+		// there so the player can see where the cannonball is going
+		// to land before they fire.
 		//
-		// The line is a long thin box (0.05 x 0.01 x ~25 m) positioned
-		// just above the ground (y = 0.02) starting from the cannon's
-		// muzzle XZ and extending along the cannon's forward direction
-		// for 25 m.  Drawn once per selected cannon.
-		static Mesh aimLine = Primitives::CreateBox(0.05f, 0.01f, 25.0f,
-                                                    Palette::Indicator);
+		// The arc is drawn as 24 small yellow box segments, each
+		// connecting two adjacent sample points along the trajectory.
+		// The hit marker is a small bright torus.
+		static Mesh aimSegMesh = Primitives::CreateBox(0.04f, 0.04f, 1.0f,
+                                                       Palette::Indicator);
+		static Mesh aimDotMesh = Primitives::CreateSphere(0.18f, 10, 10,
+                                                          Palette::Flash);
+		const int kAimSteps = 28;          // segments along the arc
+		const float kAimStepDt = 0.08f;   // seconds between samples
 		for (int i = 0; i < 3; i++) {
 			if (!cannonSelected[i]) continue;
 			Cannon* cs[3] = { &leftCannon, &centreCannon, &rightCannon };
 			vec3 muzzle = cs[i]->GetMuzzleWorldPosition();
 			vec3 fwd    = cs[i]->GetForwardWorldDirection();
-			// Drop the aim line down to ground height (cannon
-			// elevation tips the barrel but we want the indicator to
-			// sit on the grass, not up in the air).
-			muzzle.y = 0.02f;
-			// Build a translation+rotation matrix that places the box
-			// at `muzzle` and points it along `fwd` (XZ projection).
-			// The box is built along Z so we need to rotate so its +Z
-			// aligns with `fwd`.
-			vec3 fwdFlat = normalize(vec3(fwd.x, 0.0f, fwd.z));
-			float ang = atan2(fwdFlat.x, fwdFlat.z);   // rotation around Y
-			mat4 aimM = translate(mat4(1.0f), muzzle)
-			          * rotate(mat4(1.0f), ang, vec3(0.0f, 1.0f, 0.0f))
-			          * translate(mat4(1.0f), vec3(0.0f, 0.0f, 12.5f));  // half of 25 m so it starts at muzzle
-			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(aimM));
-			aimLine.Draw();
+			vec3 vel    = fwd * Projectile::DefaultSpeed;
+			vec3 pos    = muzzle;
+			// Simulate forward; break on the first frame the
+			// simulated ball is below the ground OR inside any static
+			// wall AABB.
+			vec3 prev = pos;
+			bool hitStatic = false;
+			for (int s = 0; s < kAimSteps; s++) {
+				prev = pos;
+				vel.y -= Projectile::Gravity * kAimStepDt;
+				pos   += vel * kAimStepDt;
+				if (pos.y < 0.0f) {
+					pos.y = 0.0f;
+					hitStatic = true;
+					break;
+				}
+				if (castle.HitsStatic(pos, Projectile::DefaultRadius)) {
+					hitStatic = true;
+					break;
+				}
+			}
+			// Draw a small line segment between `prev` and `pos` for
+			// each step.  The box mesh is 1 m long along +Z so we
+			// translate to the segment midpoint and rotate to align
+			// the +Z axis with the (pos - prev) direction.
+			for (int s = 1; s < kAimSteps; s++) {
+				// Re-simulate step s to get its position; cheaper
+				// than storing the full trajectory because the cost
+				// is trivial and it keeps the code straightforward.
+				vec3 v2 = fwd * Projectile::DefaultSpeed;
+				vec3 p2 = muzzle;
+				vec3 prev2 = p2;
+				for (int t = 0; t < s; t++) {
+					prev2 = p2;
+					v2.y -= Projectile::Gravity * kAimStepDt;
+					p2   += v2 * kAimStepDt;
+				}
+				if (p2.y < 0.0f || castle.HitsStatic(p2, Projectile::DefaultRadius)) break;
+				vec3 mid  = (prev2 + p2) * 0.5f;
+				vec3 dvec = p2 - prev2;
+				float len = length(dvec);
+				if (len < 1e-3f) continue;
+				vec3 dirN = dvec / len;
+				// AimSegMesh is along +Z; align with dirN.
+				float pitch = asin(-dirN.y);
+				float yaw   = atan2(dirN.x, dirN.z);
+				mat4 segM = translate(mat4(1.0f), mid)
+				          * rotate(mat4(1.0f), yaw,   vec3(0.0f, 1.0f, 0.0f))
+				          * rotate(mat4(1.0f), pitch, vec3(1.0f, 0.0f, 0.0f))
+				          * scale(mat4(1.0f), vec3(1.0f, 1.0f, len));
+				glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(segM));
+				aimSegMesh.Draw();
+			}
+			// Hit-point marker: a bright sphere at the last sample
+			// (or at the cannon position if the simulation didn't
+			// advance at all - shouldn't happen, but be safe).
+			mat4 dotM = translate(mat4(1.0f), pos);
+			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(dotM));
+			aimDotMesh.Draw();
 		}
 
 		for (Projectile& ball : projectiles) {
 			ball.Draw(shaderProgram);
 		}
+
+		// Phase 8: arrows in flight (only used during battle sim).
+		for (Arrow& a : arrows) a.Draw(shaderProgram);
+
+		// Phase 8: XYZ coordinate map in the bottom-left corner.  A
+		// small overlay that always reads world +X (red), +Y (green),
+		// +Z (blue) arrows so the player can orient themselves.
+		// Drawn LAST (no depth test) so it sits on top of everything
+		// else.  We disable depth test, draw the three coloured axes
+		// in screen space, then re-enable depth test.
+		glDisable(GL_DEPTH_TEST);
+		static Mesh coordX = Primitives::CreateCylinder(0.04f, 0.9f, 6,
+		                                                glm::vec3(0.85f, 0.15f, 0.15f),
+		                                                /*centered=*/false);
+		static Mesh coordY = Primitives::CreateCylinder(0.04f, 0.9f, 6,
+		                                                glm::vec3(0.20f, 0.80f, 0.20f),
+		                                                /*centered=*/false);
+		static Mesh coordZ = Primitives::CreateCylinder(0.04f, 0.9f, 6,
+		                                                glm::vec3(0.20f, 0.40f, 0.90f),
+		                                                /*centered=*/false);
+		int fbw, fbh; glfwGetFramebufferSize(window, &fbw, &fbh);
+		if (fbw > 0 && fbh > 0) {
+			// Overlay in screen space: the camera's view matrix is
+			// the orbit camera, and the projection is perspective.
+			// For a simple overlay we render with a fixed pixel-scale
+			// orthographic projection at the bottom-left corner.
+			mat4 hudView = mat4(1.0f);    // identity (camera at origin)
+			mat4 hudProj = ortho(0.0f, float(fbw), 0.0f, float(fbh),
+			                     -1.0f, 1.0f);
+			glUniformMatrix4fv(viewLoc, 1, GL_FALSE, value_ptr(hudView));
+			glUniformMatrix4fv(projLoc, 1, GL_FALSE, value_ptr(hudProj));
+			// Draw +X axis (red) along screen X.
+			mat4 hudMx = translate(mat4(1.0f),
+			                     vec3(40.0f, 40.0f, 0.0f))
+			            * rotate(mat4(1.0f), radians(-90.0f), vec3(0.0f, 0.0f, 1.0f));
+			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(hudMx));
+			coordX.Draw();
+			// Draw +Y axis (green) along screen Y.
+			mat4 hudMy = translate(mat4(1.0f),
+			                     vec3(40.0f, 40.0f, 0.0f));
+			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(hudMy));
+			coordY.Draw();
+			// Draw +Z axis (blue) going into the screen - use a
+			// diagonal.
+			mat4 hudMz = translate(mat4(1.0f),
+			                     vec3(40.0f, 40.0f, 0.0f))
+			            * rotate(mat4(1.0f), radians(45.0f), vec3(0.0f, 0.0f, 1.0f));
+			glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(hudMz));
+			coordZ.Draw();
+			// Restore the regular view/proj for the next frame.
+			glUniformMatrix4fv(viewLoc, 1, GL_FALSE, value_ptr(view));
+			glUniformMatrix4fv(projLoc, 1, GL_FALSE, value_ptr(projMatrix));
+		}
+		glEnable(GL_DEPTH_TEST);
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
@@ -589,14 +957,18 @@ int main() {
 	centreCannon.Delete();
 	rightCannon.Delete();
 	castle.Delete();
-	for (Tree& t : trees) t.Delete();
 	for (Archer& a : archers) a.Delete();
 	crewLeft.Delete();
 	crewCentre.Delete();
 	crewRight.Delete();
 	for (Soldier& s : army) s.Delete();
+	for (Soldier& d : defenders) d.Delete();
+	for (CampTent& t : tents) t.Delete();
+	scenery.Delete();
+	goldCrest.Delete();
 	robot.Delete();
 	for (Projectile& ball : projectiles) ball.Delete();
+	for (Arrow& a : arrows) a.Delete();
 	shaderProgram.Delete();
 
 	glfwDestroyWindow(window);

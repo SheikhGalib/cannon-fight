@@ -62,8 +62,14 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
                      centreWorld.z),
            /*sizeX=*/6.0f, /*sizeZ=*/24.0f),
 
-      // Bridge: spans the moat from x = -1 (just past the towers) to x = -7
-      // (the cannon-side bank), at the centre Z of the compound.
+      // Bridge: spans the full moat width (6 m).  Centred at the
+      // moat centre so it hinges from the castle side and drops onto
+      // the cannon-side bank.  Phase 8: the hinge is at the CASTLE
+      // side (x = centre + 3 = -1) and the OUTER end at the cannon
+      // side (x = centre - 3 = -7).  When raised 90 deg the outer
+      // end swings straight up to y = lengthX = 6, sitting just past
+      // the gatehouse towers (which is the "other side" of the river
+      // the user is asking about).
       bridge(glm::vec3(centreWorld.x - compoundHalfX - 4.0f, 0.0f,
                        centreWorld.z),
              /*lengthX=*/6.0f, /*widthZ=*/3.0f)
@@ -117,6 +123,13 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
             glm::translate(glm::mat4(1.0f),
                 glm::vec3(cx, curtainBodyH * 0.5f, innerMidZ))
         });
+        // Phase 8: cache AABB so cannonballs can collide with this
+        // wall (outer + inner bodies only; the thin corridor floor
+        // slab is treated as part of the inner wall).
+        solidBoxes.push_back({ glm::vec3(cx, curtainBodyH * 0.5f, outerMidZ),
+                                glm::vec3(lengthX * 0.5f, curtainBodyH * 0.5f, outerWallW * 0.5f) });
+        solidBoxes.push_back({ glm::vec3(cx, curtainBodyH * 0.5f, innerMidZ),
+                                glm::vec3(lengthX * 0.5f, curtainBodyH * 0.5f, innerWallW * 0.5f) });
         auto merlons = Crenellation::AlongX(
             cx - lengthX * 0.5f, merlonY, outerMidZ - merlonD * 0.5f,
             lengthX, merlonW, merlonH, merlonD, gap, Palette::Stone);
@@ -148,6 +161,10 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
             glm::translate(glm::mat4(1.0f),
                 glm::vec3(cx, curtainBodyH * 0.5f, innerMidZ))
         });
+        solidBoxes.push_back({ glm::vec3(cx, curtainBodyH * 0.5f, outerMidZ),
+                                glm::vec3(lengthX * 0.5f, curtainBodyH * 0.5f, outerWallW * 0.5f) });
+        solidBoxes.push_back({ glm::vec3(cx, curtainBodyH * 0.5f, innerMidZ),
+                                glm::vec3(lengthX * 0.5f, curtainBodyH * 0.5f, innerWallW * 0.5f) });
         auto merlons = Crenellation::AlongX(
             cx - lengthX * 0.5f, merlonY, outerMidZ + merlonD * 0.5f,
             lengthX, merlonW, merlonH, merlonD, gap, Palette::Stone);
@@ -185,6 +202,10 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
                 glm::translate(glm::mat4(1.0f),
                     glm::vec3(innerMidX, curtainBodyH * 0.5f, czMid))
             });
+            solidBoxes.push_back({ glm::vec3(outerMidX, curtainBodyH * 0.5f, czMid),
+                                    glm::vec3(outerWallW * 0.5f, curtainBodyH * 0.5f, splitLength * 0.5f) });
+            solidBoxes.push_back({ glm::vec3(innerMidX, curtainBodyH * 0.5f, czMid),
+                                    glm::vec3(innerWallW * 0.5f, curtainBodyH * 0.5f, splitLength * 0.5f) });
             auto merlons = Crenellation::AlongZ(
                 outerMidX - merlonD * 0.5f, merlonY, zStart,
                 splitLength, merlonW, merlonH, merlonD, gap, Palette::Stone);
@@ -210,6 +231,10 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
                 glm::translate(glm::mat4(1.0f),
                     glm::vec3(innerMidX, curtainBodyH * 0.5f, czMid))
             });
+            solidBoxes.push_back({ glm::vec3(outerMidX, curtainBodyH * 0.5f, czMid),
+                                    glm::vec3(outerWallW * 0.5f, curtainBodyH * 0.5f, splitLength * 0.5f) });
+            solidBoxes.push_back({ glm::vec3(innerMidX, curtainBodyH * 0.5f, czMid),
+                                    glm::vec3(innerWallW * 0.5f, curtainBodyH * 0.5f, splitLength * 0.5f) });
             auto merlons = Crenellation::AlongZ(
                 outerMidX - merlonD * 0.5f, merlonY, zStart,
                 splitLength, merlonW, merlonH, merlonD, gap, Palette::Stone);
@@ -242,12 +267,38 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
             glm::translate(glm::mat4(1.0f),
                 glm::vec3(innerMidX, curtainBodyH * 0.5f, cz))
         });
+        solidBoxes.push_back({ glm::vec3(outerMidX, curtainBodyH * 0.5f, cz),
+                                glm::vec3(outerWallW * 0.5f, curtainBodyH * 0.5f, lengthZ * 0.5f) });
+        solidBoxes.push_back({ glm::vec3(innerMidX, curtainBodyH * 0.5f, cz),
+                                glm::vec3(innerWallW * 0.5f, curtainBodyH * 0.5f, lengthZ * 0.5f) });
         auto merlons = Crenellation::AlongZ(
             outerMidX + merlonD * 0.5f, merlonY, cz - lengthZ * 0.5f,
             lengthZ, merlonW, merlonH, merlonD, gap, Palette::Stone);
         curtainEMerlons = (int)merlons.size();
         for (auto& p : merlons) curtainE.push_back(std::move(p));
     }
+
+    // ---- Phase 8: corner + gatehouse tower AABBs -----------------------
+    // Each corner tower is a (side x bodyH x side) box centred at its
+    // own world (x, bodyH/2, z).  Two gatehouse flanking towers are
+    // (2.5 x towerHeight x 2.5).  Add an AABB for each so cannonballs
+    // collide with them too (not just the curtain walls).
+    const float cSide = 4.0f;
+    const float cBodyH = 8.0f;
+    const float ghSide = 2.5f;
+    const float ghBodyH = 5.0f;
+    auto pushTowerAABB = [&](float x, float z, float side, float bodyH) {
+        solidBoxes.push_back({
+            glm::vec3(x, bodyH * 0.5f, z),
+            glm::vec3(side * 0.5f, bodyH * 0.5f, side * 0.5f)
+        });
+    };
+    pushTowerAABB(centreWorld.x - compoundHalfX, centreWorld.z - compoundHalfZ, cSide, cBodyH);
+    pushTowerAABB(centreWorld.x + compoundHalfX, centreWorld.z - compoundHalfZ, cSide, cBodyH);
+    pushTowerAABB(centreWorld.x - compoundHalfX, centreWorld.z + compoundHalfZ, cSide, cBodyH);
+    pushTowerAABB(centreWorld.x + compoundHalfX, centreWorld.z + compoundHalfZ, cSide, cBodyH);
+    pushTowerAABB(centreWorld.x - compoundHalfX, centreWorld.z - 3.75f, ghSide, ghBodyH);
+    pushTowerAABB(centreWorld.x - compoundHalfX, centreWorld.z + 3.75f, ghSide, ghBodyH);
 }
 
 bool CompoundCastle::CheckHit(glm::vec3 sphereCentre, float sphereRadius) {
@@ -255,6 +306,25 @@ bool CompoundCastle::CheckHit(glm::vec3 sphereCentre, float sphereRadius) {
     if (doors.CheckHit(sphereCentre, sphereRadius)) any = true;
     if (gate.CheckHit (sphereCentre, sphereRadius)) any = true;
     return any;
+}
+
+bool CompoundCastle::HitsStatic(glm::vec3 sphereCentre, float sphereRadius) const {
+    // Sphere-vs-AABB against every solid wall / tower AABB the castle
+    // knows about.  Returns true if the sphere overlaps any of them.  The
+    // usual offset - clamp = delta trick: clamp each axis of the sphere
+    // centre into the box, then the resulting clamped point is the
+    // closest point on the box.  If the distance from that point to the
+    // sphere centre is less than the sphere's radius, it's a hit.
+    const float r2 = sphereRadius * sphereRadius;
+    for (const SolidBox& b : solidBoxes) {
+        glm::vec3 delta(
+            sphereCentre.x - std::fmax(b.centre.x - b.half.x, std::fmin(sphereCentre.x, b.centre.x + b.half.x)),
+            sphereCentre.y - std::fmax(b.centre.y - b.half.y, std::fmin(sphereCentre.y, b.centre.y + b.half.y)),
+            sphereCentre.z - std::fmax(b.centre.z - b.half.z, std::fmin(sphereCentre.z, b.centre.z + b.half.z))
+        );
+        if (glm::dot(delta, delta) <= r2) return true;
+    }
+    return false;
 }
 
 void CompoundCastle::Update(float deltaTime) {

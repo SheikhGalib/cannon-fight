@@ -34,8 +34,13 @@ public:
     // around its position - the radius pad lets fast-moving balls still
     // register a hit when they would otherwise slip between frames.
     glm::vec3 GetPosition() const { return position; }
+    glm::vec3 GetVelocity() const { return velocity; }
     float GetRadius() const { return radius; }
     bool IsDead() const { return dead; }
+    // Phase 8: the projectile loop calls this when the ball collides
+    // with a non-breakable surface (e.g. a stone curtain wall) so it
+    // stops and the caller can drop it from the active list.
+    void Kill() { dead = true; }
 
     void Delete();
 

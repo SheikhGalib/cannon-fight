@@ -34,6 +34,19 @@ namespace Palette {
     inline const glm::vec3 Flash     (1.00f, 0.95f, 0.50f);  // brief muzzle-flash sphere
     inline const glm::vec3 StoneDark (0.18f, 0.16f, 0.14f);  // destination colour for damaged bricks
 
+    // Phase 8: combat / scenery colours.
+    inline const glm::vec3 Attacker  (0.42f, 0.20f, 0.18f);  // dark red attacker uniform
+    inline const glm::vec3 Defender  (0.18f, 0.30f, 0.45f);  // dark blue defender uniform
+    inline const glm::vec3 TentCloth (0.60f, 0.40f, 0.20f);  // canvas tent cloth
+    inline const glm::vec3 TentBase  (0.35f, 0.22f, 0.12f);  // wooden tent platform
+    inline const glm::vec3 Gold      (0.95f, 0.78f, 0.18f);  // gold crest / treasure
+    inline const glm::vec3 SnowCap   (0.95f, 0.97f, 1.00f);  // mountain snow caps
+    inline const glm::vec3 Mountain  (0.40f, 0.38f, 0.42f);  // distant mountain body
+    inline const glm::vec3 Valley    (0.32f, 0.45f, 0.22f);  // distant valley floor
+    inline const glm::vec3 NightSky  (0.05f, 0.06f, 0.15f);  // night sky
+    inline const glm::vec3 Arrow     (0.20f, 0.15f, 0.08f);  // wooden arrow shaft
+    inline const glm::vec3 Shield    (0.55f, 0.45f, 0.15f);  // brass/wood shield face
+
 }
 
 #endif

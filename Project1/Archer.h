@@ -23,6 +23,7 @@ public:
     // Reposition the archer (used by Cannon's fire sequence to swap the
     // archer back to its rest position after lighting the fuse).
     void SetPosition(glm::vec3 baseWorld);
+    glm::vec3 GetPosition() const { return glm::vec3(transform[3]); }
 
     // Phase 7: rotate the whole archer around Y (used to face the camera).
     void SetYaw(float degrees) { yawDegrees = degrees; }

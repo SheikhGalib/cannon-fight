@@ -31,6 +31,7 @@ public:
     // Reposition the soldier. Used during the cannon-firing sequence
     // when the crew lerps from its rest position to the cannon.
     void SetPosition(glm::vec3 baseWorld);
+    glm::vec3 GetPosition() const { return glm::vec3(transform[3]); }
 
     // Phase 7: rotate the whole soldier around Y (used so the army
     // consistently faces the castle door rather than the default +X).

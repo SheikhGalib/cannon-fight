@@ -109,3 +109,40 @@ python legacy\main.py     # the full Python scene
 ## Housekeeping notes
 - `Project1/run_out*.log`, `run_err*.log` are leftover stdout/stderr captures from earlier manual test runs (via `Start-Process -RedirectStandardOutput/-RedirectStandardError`) — safe to delete, not build artifacts.
 - `Project1/build_mingw/`, `Project1/x64/`, `Project1/.vs/`, `opengl-cpp/build/` are all build output — safe to delete/regenerate, never hand-edit.
+
+## Phase 8 — battle simulation, combat, scenery, day/night
+
+Phase 8 turned the static siege scene into an auto-resolving mini
+battle.  Every file in `Project1/` is C++ / OpenGL 3.3 core,
+hand-written, no external engine code.
+
+### New files
+| File | Role |
+|---|---|
+| `Project1/CampTent.{h,cpp}` | Procedural medieval tent (canvas cone on a wooden base + flagpole). |
+| `Project1/Scenery.{h,cpp}` | Ring of low-poly mountain + valley cones around the scene, so the canvas reads as infinite. |
+| `Project1/GoldCrest.{h,cpp}` | The objective: a pedestal + chest + gold coins, drawn inside the castle compound. |
+| `Project1/Arrow.{h,cpp}` | A flying wooden arrow (cylinder mesh, world-space position + velocity). |
+| `Project1/gouraud.{vert,frag}` | Per-vertex (Gouraud) shader used in place of the previous per-fragment `lit.{vert,frag}`. The vertex shader computes diffuse; the fragment shader just outputs the interpolated colour. |
+
+### New main-loop systems
+- **Day/night mode** — press **N** to toggle.  Night uses a darker sky and a low moon light direction.
+- **Battle simulation** — press **B** to start.  Walks through `BridgeUp` (defenders raise the drawbridge) → `Defending` (archers shoot arrows) → `Advance` (bridge drops) → `End`.  Press **P** to pause / resume, **T** to restart.
+- **Combat** — archers fire arrows at the closest army soldier; arrows check sphere-vs-soldier-AABB; on hit the soldier flips an `alive` flag and stops being drawn.  Defenders inside the castle are auto-promoted to archer when an archer dies.
+- **XYZ coordinate map** — a 3-axis overlay (red = +X, green = +Y, blue = +Z) drawn in the bottom-left corner in screen space.
+- **Walls stop cannonballs** — `CompoundCastle` now exposes `HitsStatic(sphere, radius)` which tests against every curtain wall body + corner + gatehouse tower AABB.  `Projectile` got a `Kill()` so the main loop can stop the ball on contact.
+
+### Soldier uniform colours (per the user's reference images)
+- **Attackers** (cannon crew + army behind the cannons): `Palette::Attacker` (dark red, per the `all-type-solders-example.jpg` reference).
+- **Defenders** (archers + castle interior guards): `Palette::Defender` (dark blue).
+- **Archers** still have their longbow + quiver; soldiers still have a sword at the hip.
+
+### Existing files changed
+- `Project1/CompoundCastle.{h,cpp}` — added `SolidBox` AABBs + `HitsStatic` collision query.
+- `Project1/Projectile.h` — `GetVelocity()` + `Kill()`.
+- `Project1/Archer.h` / `Soldier.h` — `GetPosition()` (used by the battle sim + replacement logic).
+- `Project1/Palette.h` — added `Attacker`, `Defender`, `TentCloth`, `TentBase`, `Gold`, `SnowCap`, `Mountain`, `Valley`, `NightSky`, `Arrow`, `Shield`.
+- `Project1/Main.cpp` — the big one.  See the file for the in-line commentary on every new system.
+- `Project1/makefile` — added the 4 new `.cpp` files to `COMMON`.
+- `Project1/` `Tree.{h,cpp}` were removed (and the `Tree.cpp` entry dropped from the Makefile) — the user asked for the trees to be deleted in this phase.
+- `.gitignore` and `README.md` updated for Phase 8.
