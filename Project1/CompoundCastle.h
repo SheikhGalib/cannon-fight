@@ -50,6 +50,13 @@ public:
 
     // Same breakability interface as Phase 4's Castle.
     bool CheckHit(glm::vec3 sphereCentre, float sphereRadius);
+
+    // Phase 5+: advance any detached door panels one frame (integrates
+    // angular velocity + linear velocity so they swing outward and fall).
+    void Update(float deltaTime);
+
+    // Phase 6: hold-to-raise drawbridge control. Forwards to bridge.
+    void SetBridgeRaised(bool raised) { bridge.SetRaised(raised); }
     int AliveDoorPanelCount() const;
     int TotalDoorPanelCount() const;
     int AliveBrickCount() const;

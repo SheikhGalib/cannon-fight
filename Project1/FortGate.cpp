@@ -6,6 +6,21 @@
 #include <glad/glad.h>
 #include <cmath>
 
+// Phase 7: damage-per-hit tuning.  A direct cannon-ball hit strips
+// 10% of a brick's health; at 0 the brick is removed.  Each hit
+// rebuilds the brick's mesh at a darker shade so the cumulative damage
+// is visible without per-brick shader hacks.
+static const float kDamagePerHit = 0.10f;
+
+// Helper: lerp between Stone (untouched) and StoneDark (heavily
+// damaged) by `t` in [0, 1].  We rebuild the brick's mesh on each hit
+// so the colour shift is permanent rather than a per-frame uniform
+// trick.
+static glm::vec3 DamageColour(float health) {
+    float t = glm::clamp(1.0f - health, 0.0f, 1.0f);
+    return Palette::Stone * (1.0f - t) + Palette::StoneDark * t;
+}
+
 FortGate::FortGate(glm::vec3 centreWorld,
                    float width, float height, float depth,
                    float gateWidth, int rows)
@@ -137,8 +152,22 @@ bool FortGate::CheckHit(glm::vec3 sphereCentre, float sphereRadius) {
             std::fmax(-half.z, std::fmin(offset.z, half.z)));
         glm::vec3 delta = offset - clamped;
         if (glm::dot(delta, delta) <= sphereRadius * sphereRadius) {
-            b.alive = false;
-            anyKilled = true;
+            // Phase 7: each cannon hit strips kDamagePerHit of health.
+            // We rebuild the brick's mesh at a darker shade so the
+            // cumulative damage is visible. At health <= 0 the brick
+            // is removed.
+            b.health -= kDamagePerHit;
+            // Discard old mesh, build a new one at the new colour.
+            b.mesh.Delete();
+            glm::vec3 newColour = DamageColour(b.health);
+            b.mesh = Primitives::CreateBox(brickSize.x, brickSize.y, brickSize.z,
+                                            newColour);
+            if (b.health <= 0.0f) {
+                b.alive = false;
+                // Free the mesh now; the loop ignores dead bricks.
+                b.mesh.Delete();
+                anyKilled = true;
+            }
         }
     }
     return anyKilled;

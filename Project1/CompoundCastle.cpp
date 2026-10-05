@@ -20,18 +20,18 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
     // the gatehouse on the WEST face of the compound (x = centreWorld.x
     // - compoundHalfX), and the flanking towers at z = ±3.75.
     : doors(glm::vec3(centreWorld.x - compoundHalfX, 0.0f, centreWorld.z),
-            wallHeight, gateWidth, /*panelDepth=*/0.10f, /*plankCount=*/3),
+            wallHeight, /*doorWidth=*/4.0f, /*panelDepth=*/0.10f, /*plankCount=*/3),
 
       gate(glm::vec3(centreWorld.x - compoundHalfX, 0.0f, centreWorld.z),
            /*width=*/5.0f, /*height=*/wallHeight, /*depth=*/0.8f,
            /*gateWidth=*/gateWidth, /*rows=*/4),
 
-      gatehouseTower (glm::vec3(centreWorld.x - compoundHalfX - 3.75f, 0.0f,
+      gatehouseTower (glm::vec3(centreWorld.x - compoundHalfX, 0.0f,
                                 centreWorld.z - 3.75f),
                       /*side=*/2.5f, /*bodyH=*/towerHeight,
                       /*parapetH=*/0.6f, /*merlonW=*/0.4f,
                       /*gap=*/0.4f, /*flagpoleH=*/1.5f),
-      gatehouseTower2(glm::vec3(centreWorld.x - compoundHalfX - 3.75f, 0.0f,
+      gatehouseTower2(glm::vec3(centreWorld.x - compoundHalfX, 0.0f,
                                 centreWorld.z + 3.75f),
                       2.5f, towerHeight, 0.6f, 0.4f, 0.4f, 1.5f),
 
@@ -51,17 +51,20 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
                          centreWorld.z + compoundHalfZ),
                cornerSide, cornerHeight, 0.7f, 0.5f, 0.4f, 1.8f),
 
-      // Moat: a 6 m wide, 12 m long strip of water on the -X side of
-      // the compound (where the cannons live), centred at
+      // Moat: a 6 m wide strip of water on the -X side of the
+      // compound (where the cannons live).  Centred at
       // (centreWorld.x - compoundHalfX - 4, 0, centreWorld.z).
+      // Now that the gatehouse towers sit on the curtain wall line (x=0),
+      // the moat starts just past the towers (x = -1).
+      // Phase 6: widened along Z to merge seamlessly with the wide
+      // river that runs across the rest of the scene.
       moat(glm::vec3(centreWorld.x - compoundHalfX - 4.0f, 0.0f,
                      centreWorld.z),
-           /*sizeX=*/6.0f, /*sizeZ=*/12.0f),
+           /*sizeX=*/6.0f, /*sizeZ=*/24.0f),
 
-      // Bridge: spans the moat from x = compoundHalfX (just outside the
-      // gate) to x = -4 (the cannon-side bank), at the centre Z of the
-      // compound.
-      bridge(glm::vec3(centreWorld.x - compoundHalfX - 3.0f, 0.0f,
+      // Bridge: spans the moat from x = -1 (just past the towers) to x = -7
+      // (the cannon-side bank), at the centre Z of the compound.
+      bridge(glm::vec3(centreWorld.x - compoundHalfX - 4.0f, 0.0f,
                        centreWorld.z),
              /*lengthX=*/6.0f, /*widthZ=*/3.0f)
 {
@@ -74,25 +77,48 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
     // wall (x = -compoundHalfX) is split into two pieces straddling the
     // gatehouse footprint: from z = -compoundHalfZ to z = -3.75, and
     // from z = +3.75 to z = +compoundHalfZ.
+    // Phase 7: each curtain wall is now THREE side-by-side pieces
+    // (outer body + corridor floor + inner body).  Merlons sit on top
+    // of the outer wall only.
     const float curtainBodyH = wallHeight;
     const float merlonH = 0.50f;
     const float merlonW = 0.45f;
     const float gap = 0.45f;
-    const float merlonD = 0.70f;
+    const float merlonD = 1.0f;                  // matches outer body depth
     const float merlonY = wallHeight;
+    const float outerWallW = 1.0f;               // outer stone body depth
+    const float corridorW  = 1.0f;               // walkable corridor width
+    const float innerWallW = 1.0f;               // inner stone body depth
+    const float corridorT  = 0.10f;              // corridor slab thickness
+    const float corridorY  = wallHeight - corridorT;
 
     // ---- North curtain (-Z side): x ∈ [-compoundHalfX, +compoundHalfX] --
+    // Outer face stays at cz - 0.7 (matches the old single-wall face).
     {
         const float lengthX = 2.0f * compoundHalfX;
         const float cx = centreWorld.x;
         const float cz = centreWorld.z - compoundHalfZ;
+        const float outerFaceZ = cz - 0.7f;
+        const float outerMidZ  = outerFaceZ + outerWallW * 0.5f;
+        const float corridorMidZ = outerFaceZ + outerWallW + corridorW * 0.5f;
+        const float innerMidZ  = outerFaceZ + outerWallW + corridorW + innerWallW * 0.5f;
         curtainN.push_back({
-            Primitives::CreateBox(lengthX, curtainBodyH, merlonD, Palette::Stone),
+            Primitives::CreateBox(lengthX, curtainBodyH, outerWallW, Palette::Stone),
             glm::translate(glm::mat4(1.0f),
-                glm::vec3(cx, curtainBodyH * 0.5f, cz))
+                glm::vec3(cx, curtainBodyH * 0.5f, outerMidZ))
+        });
+        curtainN.push_back({
+            Primitives::CreateBox(lengthX, corridorT, corridorW, Palette::Stone),
+            glm::translate(glm::mat4(1.0f),
+                glm::vec3(cx, corridorY, corridorMidZ))
+        });
+        curtainN.push_back({
+            Primitives::CreateBox(lengthX, curtainBodyH, innerWallW, Palette::Stone),
+            glm::translate(glm::mat4(1.0f),
+                glm::vec3(cx, curtainBodyH * 0.5f, innerMidZ))
         });
         auto merlons = Crenellation::AlongX(
-            cx - lengthX * 0.5f, merlonY, cz - merlonD * 0.5f,
+            cx - lengthX * 0.5f, merlonY, outerMidZ - merlonD * 0.5f,
             lengthX, merlonW, merlonH, merlonD, gap, Palette::Stone);
         curtainNMerlons = (int)merlons.size();
         for (auto& p : merlons) curtainN.push_back(std::move(p));
@@ -103,13 +129,27 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
         const float lengthX = 2.0f * compoundHalfX;
         const float cx = centreWorld.x;
         const float cz = centreWorld.z + compoundHalfZ;
+        const float outerFaceZ = cz + 0.7f;
+        const float outerMidZ  = outerFaceZ - outerWallW * 0.5f;
+        const float corridorMidZ = outerFaceZ - outerWallW - corridorW * 0.5f;
+        const float innerMidZ  = outerFaceZ - outerWallW - corridorW - innerWallW * 0.5f;
         curtainS.push_back({
-            Primitives::CreateBox(lengthX, curtainBodyH, merlonD, Palette::Stone),
+            Primitives::CreateBox(lengthX, curtainBodyH, outerWallW, Palette::Stone),
             glm::translate(glm::mat4(1.0f),
-                glm::vec3(cx, curtainBodyH * 0.5f, cz))
+                glm::vec3(cx, curtainBodyH * 0.5f, outerMidZ))
+        });
+        curtainS.push_back({
+            Primitives::CreateBox(lengthX, corridorT, corridorW, Palette::Stone),
+            glm::translate(glm::mat4(1.0f),
+                glm::vec3(cx, corridorY, corridorMidZ))
+        });
+        curtainS.push_back({
+            Primitives::CreateBox(lengthX, curtainBodyH, innerWallW, Palette::Stone),
+            glm::translate(glm::mat4(1.0f),
+                glm::vec3(cx, curtainBodyH * 0.5f, innerMidZ))
         });
         auto merlons = Crenellation::AlongX(
-            cx - lengthX * 0.5f, merlonY, cz + merlonD * 0.5f,
+            cx - lengthX * 0.5f, merlonY, outerMidZ + merlonD * 0.5f,
             lengthX, merlonW, merlonH, merlonD, gap, Palette::Stone);
         curtainSMerlons = (int)merlons.size();
         for (auto& p : merlons) curtainS.push_back(std::move(p));
@@ -122,17 +162,31 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
     {
         const float splitLength = compoundHalfZ - 3.75f;
         const float cx = centreWorld.x - compoundHalfX;
+        const float outerFaceX = cx - 0.7f;
+        const float outerMidX  = outerFaceX + outerWallW * 0.5f;
+        const float corridorMidX = outerFaceX + outerWallW + corridorW * 0.5f;
+        const float innerMidX  = outerFaceX + outerWallW + corridorW + innerWallW * 0.5f;
         // North piece (z = -compoundHalfZ to z = -3.75)
         {
             const float zStart = centreWorld.z - compoundHalfZ;
             const float czMid  = zStart + splitLength * 0.5f;
             curtainW.push_back({
-                Primitives::CreateBox(merlonD, curtainBodyH, splitLength, Palette::Stone),
+                Primitives::CreateBox(outerWallW, curtainBodyH, splitLength, Palette::Stone),
                 glm::translate(glm::mat4(1.0f),
-                    glm::vec3(cx, curtainBodyH * 0.5f, czMid))
+                    glm::vec3(outerMidX, curtainBodyH * 0.5f, czMid))
+            });
+            curtainW.push_back({
+                Primitives::CreateBox(corridorW, corridorT, splitLength, Palette::Stone),
+                glm::translate(glm::mat4(1.0f),
+                    glm::vec3(corridorMidX, corridorY, czMid))
+            });
+            curtainW.push_back({
+                Primitives::CreateBox(innerWallW, curtainBodyH, splitLength, Palette::Stone),
+                glm::translate(glm::mat4(1.0f),
+                    glm::vec3(innerMidX, curtainBodyH * 0.5f, czMid))
             });
             auto merlons = Crenellation::AlongZ(
-                cx - merlonD * 0.5f, merlonY, zStart,
+                outerMidX - merlonD * 0.5f, merlonY, zStart,
                 splitLength, merlonW, merlonH, merlonD, gap, Palette::Stone);
             curtainWMerlons += (int)merlons.size();
             for (auto& p : merlons) curtainW.push_back(std::move(p));
@@ -142,12 +196,22 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
             const float zStart = centreWorld.z + 3.75f;
             const float czMid  = zStart + splitLength * 0.5f;
             curtainW.push_back({
-                Primitives::CreateBox(merlonD, curtainBodyH, splitLength, Palette::Stone),
+                Primitives::CreateBox(outerWallW, curtainBodyH, splitLength, Palette::Stone),
                 glm::translate(glm::mat4(1.0f),
-                    glm::vec3(cx, curtainBodyH * 0.5f, czMid))
+                    glm::vec3(outerMidX, curtainBodyH * 0.5f, czMid))
+            });
+            curtainW.push_back({
+                Primitives::CreateBox(corridorW, corridorT, splitLength, Palette::Stone),
+                glm::translate(glm::mat4(1.0f),
+                    glm::vec3(corridorMidX, corridorY, czMid))
+            });
+            curtainW.push_back({
+                Primitives::CreateBox(innerWallW, curtainBodyH, splitLength, Palette::Stone),
+                glm::translate(glm::mat4(1.0f),
+                    glm::vec3(innerMidX, curtainBodyH * 0.5f, czMid))
             });
             auto merlons = Crenellation::AlongZ(
-                cx - merlonD * 0.5f, merlonY, zStart,
+                outerMidX - merlonD * 0.5f, merlonY, zStart,
                 splitLength, merlonW, merlonH, merlonD, gap, Palette::Stone);
             curtainWMerlons += (int)merlons.size();
             for (auto& p : merlons) curtainW.push_back(std::move(p));
@@ -159,13 +223,27 @@ CompoundCastle::CompoundCastle(glm::vec3 centreWorld,
         const float lengthZ = 2.0f * compoundHalfZ;
         const float cx = centreWorld.x + compoundHalfX;
         const float cz = centreWorld.z;
+        const float outerFaceX = cx + 0.7f;
+        const float outerMidX  = outerFaceX - outerWallW * 0.5f;
+        const float corridorMidX = outerFaceX - outerWallW - corridorW * 0.5f;
+        const float innerMidX  = outerFaceX - outerWallW - corridorW - innerWallW * 0.5f;
         curtainE.push_back({
-            Primitives::CreateBox(merlonD, curtainBodyH, lengthZ, Palette::Stone),
+            Primitives::CreateBox(outerWallW, curtainBodyH, lengthZ, Palette::Stone),
             glm::translate(glm::mat4(1.0f),
-                glm::vec3(cx, curtainBodyH * 0.5f, cz))
+                glm::vec3(outerMidX, curtainBodyH * 0.5f, cz))
+        });
+        curtainE.push_back({
+            Primitives::CreateBox(corridorW, corridorT, lengthZ, Palette::Stone),
+            glm::translate(glm::mat4(1.0f),
+                glm::vec3(corridorMidX, corridorY, cz))
+        });
+        curtainE.push_back({
+            Primitives::CreateBox(innerWallW, curtainBodyH, lengthZ, Palette::Stone),
+            glm::translate(glm::mat4(1.0f),
+                glm::vec3(innerMidX, curtainBodyH * 0.5f, cz))
         });
         auto merlons = Crenellation::AlongZ(
-            cx + merlonD * 0.5f, merlonY, cz - lengthZ * 0.5f,
+            outerMidX + merlonD * 0.5f, merlonY, cz - lengthZ * 0.5f,
             lengthZ, merlonW, merlonH, merlonD, gap, Palette::Stone);
         curtainEMerlons = (int)merlons.size();
         for (auto& p : merlons) curtainE.push_back(std::move(p));
@@ -177,6 +255,14 @@ bool CompoundCastle::CheckHit(glm::vec3 sphereCentre, float sphereRadius) {
     if (doors.CheckHit(sphereCentre, sphereRadius)) any = true;
     if (gate.CheckHit (sphereCentre, sphereRadius)) any = true;
     return any;
+}
+
+void CompoundCastle::Update(float deltaTime) {
+    // The doors have break physics (Phase 5+), the bridge has retract
+    // animation (Phase 6).  Wire both updates here so the rest of the
+    // scene graph doesn't have to know about either.
+    doors.Update(deltaTime);
+    bridge.Update(deltaTime);
 }
 
 int CompoundCastle::AliveDoorPanelCount() const { return doors.AlivePanelCount(); }

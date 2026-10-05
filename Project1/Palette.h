@@ -25,6 +25,14 @@ namespace Palette {
     inline const glm::vec3 Copper    (0.55f, 0.40f, 0.20f);  // dummy robot body (Phase 3)
     inline const glm::vec3 Water     (0.18f, 0.40f, 0.62f);  // moat surface (Phase 5)
     inline const glm::vec3 Bridge    (0.45f, 0.43f, 0.38f);  // stone bridge deck (Phase 5)
+    // Phase 6 additions: figure colours (archers + soldiers + bridge chains).
+    inline const glm::vec3 Skin      (0.85f, 0.65f, 0.50f);  // faces / hands on the figures
+    inline const glm::vec3 Leather   (0.45f, 0.28f, 0.18f);  // sword grip / spare jerkin detail
+
+    // Phase 7 additions: cannon aim + muzzle flash.
+    inline const glm::vec3 Indicator (1.00f, 0.90f, 0.25f);  // yellow aim line on the ground
+    inline const glm::vec3 Flash     (1.00f, 0.95f, 0.50f);  // brief muzzle-flash sphere
+    inline const glm::vec3 StoneDark (0.18f, 0.16f, 0.14f);  // destination colour for damaged bricks
 
 }
 

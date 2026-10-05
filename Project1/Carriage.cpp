@@ -80,8 +80,55 @@ void Carriage::MoveForward(float distance) {
     transform.position.x += distance;
 }
 
+void Carriage::MoveRaw(glm::vec3 delta) {
+    transform.position += delta;
+}
+
+// Recoil tuning ------------------------------------------------------
+// The carriage is pushed back kRecoilKick metres the instant Fire() is
+// called, then springs back to its rest position over kRecoilReturn
+// seconds.  These values were picked to look right at the default 16 m
+// firing range: visible but not absurd, gone well before the next
+// cannonball arrives.
+static const float kRecoilKick   = 0.40f;
+static const float kRecoilReturn = 0.35f;
+
+void Carriage::Fire() {
+    // Snap the carriage to the maximum rearward offset.  Update() will
+    // pull it back over the next kRecoilReturn seconds.
+    recoilOffset = kRecoilKick;
+}
+
+void Carriage::Update(float deltaTime) {
+    if (recoilOffset == 0.0f) return;
+    // Linear ease-back: at the chosen kRecoilReturn this lands within
+    // ~1 mm of zero.  A spring (Hooke's law) would be more physical but
+    // produces overshoot, which reads as "wobbly" on a 60 Hz render and
+    // isn't how a real gun carriage on dirt actually behaves.
+    float step = kRecoilKick * (deltaTime / kRecoilReturn);
+    recoilOffset -= step;
+    if (recoilOffset < 0.0f) recoilOffset = 0.0f;
+}
+
+glm::mat4 Carriage::GetMatrix() const {
+    // Apply the recoil offset as a translation along -X in addition to
+    // the base transform.  The carriage is the root of the cannon scene
+    // graph, so all four sub-meshes (two wheels, axle / bolster, barrel)
+    // visibly shift with the gun.
+    glm::mat4 base = transform.GetMatrix();
+    if (recoilOffset == 0.0f) return base;
+    return glm::translate(base, glm::vec3(-recoilOffset, 0.0f, 0.0f));
+}
+
 void Carriage::Draw(Shader& shader, const glm::mat4& parentMatrix) {
     DrawParts(shader, parentMatrix * transform.GetMatrix(), parts);
+}
+
+void Carriage::DrawAt(Shader& shader, const glm::mat4& worldMatrix) {
+    // Caller has already composed the carriage's full world matrix
+    // (with yaw / recoil / anything else), so each part just rides
+    // on it directly.
+    DrawParts(shader, worldMatrix, parts);
 }
 
 void Carriage::Delete() {

@@ -53,6 +53,11 @@ private:
         Mesh mesh;
         glm::mat4 local;
         bool alive;
+
+        // Phase 7: each cannon hit strips kDamagePerHit of health.
+        // While health > 0 the brick darkens (lerp from stone to
+        // stoneDark); at 0 it disappears.
+        float health = 1.0f;
     };
 
     std::vector<Brick> bricks;

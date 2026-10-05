@@ -29,6 +29,16 @@ Project1/tools/*.bmp
 # creating a real `nul` file in the project root. Just in case.
 nul
 
+# --- tools/CapturePhaseX.cpp intermediate outputs --------------------------
+# These BMPs are produced by the doc-capture tools but never consumed.
+Project1/phase*_*.bmp
+
+# --- LaTeX build debris ----------------------------------------------------
+docs/report.aux
+docs/report.log
+docs/report.out
+docs/report.toc
+
 # --- 3rd-party libraries vendored into the tree ---------------------------
 # These are downloaded by hand from upstream releases - committing them
 # keeps the repo huge and means upgrades have to be a separate concern.

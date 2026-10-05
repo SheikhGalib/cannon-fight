@@ -34,9 +34,24 @@ public:
     // Moves the whole gun along +X (forward) / -X (back).
     void MoveForward(float distance);
 
+    // Phase 7: arbitrary horizontal (X/Z) translation. Used by Cannon
+    // to drive along the cannon's yawed forward direction rather than
+    // strict world +X.
+    void MoveRaw(glm::vec3 delta);
+
+    // Phase 5: firing recoil. `Fire()` instantly kicks the carriage back
+    // by `kRecoilKick` metres (along -X, the opposite of the firing
+    // direction).  Each subsequent `Update(dt)` eases it back toward 0
+    // over `kRecoilReturn` seconds using a smooth decay so it feels like
+    // the gun rolling back into battery rather than snapping in place.
+    void Fire();
+    void Update(float deltaTime);
+
     // The matrix that everything attached to the carriage - both wheels and
-    // the barrel - should be drawn relative to.
-    glm::mat4 GetMatrix() const { return transform.GetMatrix(); }
+    // the barrel - should be drawn relative to.  This INCLUDES the
+    // transient recoil offset, so the barrel + wheels visibly slide when
+    // the gun fires.
+    glm::mat4 GetMatrix() const;
 
     // Height of the top edge of a trail beam directly above/below x, in
     // carriage space. The cheeks and the quoin block use this so they always
@@ -44,6 +59,13 @@ public:
     static float BeamHeightAt(float x);
 
     void Draw(Shader& shader, const glm::mat4& parentMatrix);
+
+    // Phase 7: like Draw() but does NOT multiply by the carriage's own
+    // transform.GetMatrix().  Used by Cannon to draw the carriage with
+    // an externally-composed world matrix (e.g. one that has the yaw
+    // rotation baked in around the cannon's centre).
+    void DrawAt(Shader& shader, const glm::mat4& worldMatrix);
+
     void Delete();
 
     // Only used by tools/RenderDocShots.cpp, to draw the carriage one stage at
@@ -54,6 +76,7 @@ public:
 private:
     std::vector<Part> parts;
     Transform transform;
+    float recoilOffset = 0.0f;   // current additional -X offset from firing recoil
 };
 
 #endif
