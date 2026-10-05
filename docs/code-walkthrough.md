@@ -39,6 +39,10 @@
 - [পর্ব ২৩ — `Main.cpp` Phase 3 দৃশ্য: তিন কামান, দুর্গ, গাছ, রোবট](#পর্ব-২৩--maincpp-phase-3-দৃশ্য-তিন-কামান-দুর্গ-গাছ-রোবট)
 - [পর্ব ২৪ — বিল্ড ও রান](#পর্ব-২৪--বিল্ড-ও-রান)
 - [পর্ব ২৫ — নিজে হাতে পরীক্ষা করুন](#পর্ব-২৫--নিজে-হাতে-পরীক্ষা-করুন)
+- [পর্ব ২৬ — Phase 4: `Crenellation` — যুদ্ধ-চূড়ার খাঁজকাটা পাথর](#পর্ব-২৬--phase-4-crenellation--যুদ্ধ-চূড়ার-খাঁজকাটা-পাথর)
+- [পর্ব ২৭ — Phase 4: `Tower` — চারকোলা পাথরের চূড়া](#পর্ব-২৭--phase-4-tower--চারকোলা-পাথরের-চূড়া)
+- [পর্ব ২৮ — Phase 4: `Door` — ভাঙা যায় এমন কাঠের দরজা](#পর্ব-২৮--phase-4-door--ভাঙা-যায়-এমন-কাঠের-দরজা)
+- [পর্ব ২৯ — Phase 4: `Castle` — সব জোড়া লাগানো](#পর্ব-২৯--phase-4-castle--সব-জোড়া-লাগানো)
 - [শব্দকোষ (Glossary)](#শব্দকোষ-glossary)
 
 ---
@@ -2983,6 +2987,394 @@ mingw32-make clean      # exe মুছে দেয়
 
 ---
 
+## পর্ব ২৬ — Phase 4: `Crenellation` — যুদ্ধ-চূড়ার খাঁজকাটা পাথর
+
+Phase 3-এর দেয়াল ছিল একটা সমতল স্ল্যাব; Phase 4-এর প্রাসাদের ছাদ দেখতে হবে
+ডিজনির ডিজাইনের মতো — মাঝে মাঝে উঁচু "merlon" (যুদ্ধ-চূড়া) আর মাঝে ফাঁকা
+"crenel"। যেহেতু ছবিতে ৮-১০টা একইরকম বাক্স পাশাপাশি বসাতে হবে, এটা
+helper namespace হিসেবে আলাদা করে রাখাই সবচেয়ে ভালো।
+
+```cpp
+// Project1/Crenellation.h
+namespace Crenellation {
+    std::vector<Part> AlongX(
+        float baseX, float baseY, float baseZ, float lengthX,
+        float merlonW, float merlonH, float merlonD,
+        float gap, const glm::vec3& color);
+
+    std::vector<Part> AlongZ(
+        float baseX, float baseY, float baseZ, float lengthZ,
+        float merlonW, float merlonH, float merlonD,
+        float gap, const glm::vec3& color);
+}
+```
+
+কোনো অবজেক্ট নেই, কোনো `Draw()`/`Delete()` নেই — শুধু একটা ফাংশন যেটা
+merlon-এর একটা `std::vector<Part>` রিটার্ন করে। ব্যবহারকারী সেগুলো তার নিজের
+`std::vector<Part>`-এ `push_back` করে, তারপর স্বাভাবিক `for (Part& p : ...)`
+লুপে আঁকে।
+
+### ২৬.১ সূত্রটা
+
+```
+merlon-এর সংখ্যা = floor( lengthX / (merlonW + gap) )
+i-তম merlon-এর কেন্দ্র:
+    x = baseX + (i + 0.5) * (merlonW + gap) + merlonW/2     // AlongX-এ
+    y = baseY + merlonH/2
+    z = baseZ + merlonD/2                                  // গভীরতার ঠিক মাঝে
+```
+
+সহজ কথায়: একটা নির্দিষ্ট "stride" (merlon-এর চওড়া + ফাঁক) ধরে, যতবার ধরে
+দেয়ালের দৈর্ঘ্যে পারি, ততোটা merlon বসানো হয়। `AlongX` merlon-গুলোকে X-অক্ষ
+বরাবর সারি দেয়, `AlongZ` Z-অক্ষ বরাবর — tower-এর চার দিকের parapet
+এঁকে দেয় এই দুটো।
+
+### ২৬.২ এটা কেন helper namespace, helper class না?
+
+কারণ এতে কোনো অবস্থা (state) নেই। Tower-এর `parts` ভেক্টরে ক্যারিশ আর
+quoin-এর `Part` থাকে, তাই Tower-একে class দরকার। কিন্তু merlon-গুলো শুধু
+read-only mesh-এর সংগ্রহ — দরকার হলে `Delete()`-ও ব্যবহারকারীকেই
+করতে হবে, `Crenellation`-কে দিয়ে নয়।
+
+### ২৬.৩ চোখে দেখা: tower-এর এক পাশের parapet
+
+![tower front parapet](images/walkthrough/placeholder.png)
+
+*(চিত্রটি এই ডকের ছবি-পুনর্গঠন স্ক্রিপ্টে যোগ করা যেতে পারে)*
+
+---
+
+## পর্ব ২৭ — Phase 4: `Tower` — চারকোলা পাথরের চূড়া
+
+একটা Disney-style castle-এর প্রতিটা tower হলো একটা বর্গাকার পাথরের খুঁটি,
+যার চারপাশে চারটা "quoin" (কোণার লম্বা পাথর), চারটা "arrow slit"
+(সরুজি জানালা), এবং চার দিকের খাঁজকাটা চূড়া (crenellated parapet)। সবশেষে
+একটা পতাকা।
+
+```
+┌──────┐ ┌────┐
+│░░░░░░│ │    │ ← পতাকা (Palette::Wood, 0.80×0.45×0.04)
+│░░░░░░│ ░░░░░░░░░░░░░░░░ ← পতাকা-দণ্ড + merlons (Crenellation)
+├─merlons
+│       │
+│ [≡]   │ ← arrow-slit জানালা (৪টা, প্রতিটা মুখে একটা, মাঝখানে)
+│       │
+│       │
+└───────┘ ← quoins চার কোণায় (সামান্য গাঢ়)
+```
+
+```cpp
+class Tower {
+public:
+    Tower(glm::vec3 baseCentre,
+          float side, float bodyH, float parapetH,
+          float merlonW, float gap, float flagpoleH);
+    void Draw(Shader& shader);
+    void Delete();
+private:
+    std::vector<Part> parts;   // সব Parts: শরীর, quoin, slit, merlon, পতাকা
+};
+```
+
+### ২৭.১ ধাপ ১: প্রধান পাথরের শরীর
+
+`side × bodyH × side` মাপের একটা বাক্স, কেন্দ্র `(cx, bodyH/2, cz)`-এ।
+`Palette::Stone` (একটা হালকা ধূসর)।
+
+### ২৭.২ ধাপ ২: চারটা quoin
+
+প্রতিটা কোণায় `0.20 × bodyH × 0.20` মাপের একটা সরু বাক্স। যেহেতু `Palette`
+এ "DarkIron" রঙটা প্রায়-কালো ধূসর, সেটাই ব্যবহার করা হয়েছে — quoin যেন
+সামান্য গাঢ় দেখায়, প্রধান শরীর থেকে আলাদা করা যায়। কোণার অবস্থান:
+
+```cpp
+const float qoff = halfSide;   // tower-এর ঠিক কোণায়
+const float cornerOffsets[4][2] = {
+    { -qoff, -qoff }, { +qoff, -qoff },
+    { -qoff, +qoff }, { +qoff, +qoff },
+};
+```
+
+### ২৭.৩ ধাপ ৩: চারটা arrow slit
+
+প্রতিটা tower-এর চারটা মুখের ঠিক মাঝখানে একটা করে `0.10 × 0.80 × 0.05`
+মাপের খাড়া বাক্স, `Palette::Bore` (প্রায়-কালো) রঙে — পাঠকের চোখে "ভেতরের
+অন্ধকার"। চারটার গভীরতা ভিন্ন দিকে: +X মুখে X-অক্ষ বরাবর, -X মুখে -X
+বরাবর, ইত্যাদি।
+
+### ২৭.৪ ধাপ ৪: parapet
+
+প্রতিটা tower-এর চার দিকের উপরের ধারে `Crenellation::AlongX` (সামনে +
+পেছনে) এবং `Crenellation::AlongZ` (বাম + ডান) দিয়ে merlons সাজানো হয়।
+merlons-এর উচ্চতা `parapetH` (ডিফল্ট 0.6 m), কিন্তু body-র `bodyH` উচ্চতার
+উপরে বসে।
+
+### ২৭.৫ ধাপ ৫: পতাকা-দণ্ড আর পতাকা
+
+একটা পাতলা খাড়া বাক্স (`poleW=0.05`) `Palette::Iron`-এ — পতাকা-দণ্ড।
+তার উপরে একটা পাতলা আড়াআড়ি বাক্স (`flagW=0.80`, `flagH=0.45`) —
+পতাকা। পতাকা `Palette::Wood` রঙে (Phase 4-এ কোনো লাল রঙ Palette-এ
+নেই, তাই বাদামী কাঠ ব্যবহার করা হয়েছে — "wooden banner")।
+
+### ২৭.৬ এটা কেন `Mesh`-এর member নেই
+
+শুরুতে একটা `Mesh flagMesh;` member ছিল, কিন্তু `Mesh`-এর কোনো
+default constructor নেই — সেটা GPU buffer ID রাখে, তাই সুস্পষ্টভাবে
+তৈরি করতে হয়। সবচেয়ে সহজ সমাধান: পতাকাটাকেও একটা সাধারণ `Part` হিসেবে
+`parts` ভেক্টরে রেখে দেওয়া। কোনো আলাদা সদস্য নেই, কোনো `Draw`-এ ব্যতিক্রম
+নেই — `for (Part& p : parts)` লুপ একই কাজ করে।
+
+---
+
+## পর্ব ২৮ — Phase 4: `Door` — ভাঙা যায় এমন কাঠের দরজা
+
+FortGate-এর দরজা ছিল ফাঁকা — একটা পাথরের পিলারের মাঝের ফাঁক। Phase 4-এ দরজা
+হলো দুটো স্বতন্ত্র কাঠের প্যানেল, প্রতিটার সামনে আলংকারিক প্ল্যাঙ্ক স্ট্রিপ।
+
+```cpp
+class Door {
+public:
+    Door(glm::vec3 centreWorld,
+         float doorHeight, float doorWidth, float panelDepth, int plankCount);
+
+    bool CheckHit(glm::vec3 sphereCentre, float sphereRadius);
+    int AlivePanelCount() const;
+    int TotalPanelCount() const { return (int)panels.size(); }
+
+    void Draw(Shader& shader);
+    void Delete();
+private:
+    struct Panel {
+        Mesh mesh;          // the panel (পাতলা বাক্স)
+        glm::mat4 local;    // প্যানেলের world matrix
+        std::vector<Part> planks;
+        bool alive = true;
+        float half[3];      // AABB hit test-এর জন্য cached half-extents
+        Panel(Mesh m, glm::mat4 loc, std::vector<Part> pl, bool a)
+          : mesh(std::move(m)), local(loc), planks(std::move(pl)), alive(a) {
+            half[0] = half[1] = half[2] = 0.0f;
+        }
+    };
+    std::vector<Panel> panels;
+    glm::vec3 panelSize;    // (panelWidth, doorHeight, panelDepth)
+};
+```
+
+### ২৮.১ দুটো প্যানেল, একটা দরজা
+
+```
+doorway centreWorld (e.g. x=12, y=0, z=0)
+       │
+   ┌───┼───┐
+   │   │   │            doorHeight (3 m)
+   │ L │ R │            doorWidth/2 = panelW (1 m each)
+   │   │   │
+   └───┴───┘
+   ↑ L panel at x=11.5, R panel at x=12.5
+```
+
+প্রতিটা প্যানেল `panelW × doorHeight × panelDepth` মাপের একটা পাতলা
+বাক্স (`0.10 m` পুরু)। `Palette::Wood` (বাদামী)।
+
+### ২৮.২ প্ল্যাঙ্ক স্ট্রিপ — শুধুই সাজসজ্জা
+
+প্রতিটা প্যানেলের সামনে (`+Z` দিকে, যেদিকে কামান আছে) সম-দূরত্বে
+`plankCount` সংখ্যক আড়াআড়ি পাতলা বাক্স — পুরনো দরজার "horizontal
+plank"। `Palette::WoodLight` (হালকা বাদামী) যাতে পড়ার সময় প্রধান প্যানেল
+থেকে আলাদা দেখায়।
+
+### ২৮.৩ 🎯 Phase 4-এর সবচেয়ে গুরুত্বপূর্ণ সংশোধন: hit test সংশোধন
+
+Phase 2-এর `FortGate`-এর brick hit test-এ একটা ভুল ছিল যেটা তখন চোখে
+পড়েনি কারণ brick-এর বাক্সগুলো মোটা ছিল এবং গুলি সাধারণত একটা brick-এর
+মধ্য দিয়ে যাওয়ার সময় একবারের বেশি check হতো না। Phase 4-এ দরজা অনেক
+পাতলা (`0.10 m`), এবং গুলি প্রায়ই প্যানেলের ভেতর দিয়ে যায় — কিন্তু
+পুরনো কোডটা ভুল রিপোর্ট করতো "কোনো সংঘর্ষ নেই"।
+
+**ভুল কোড (Phase 2/3-এ ছিল):**
+```cpp
+glm::vec3 closest(
+    std::fmax(-half.x, std::fmin(sphereCentre.x - centre.x, half.x)),
+    ...);
+if (glm::dot(closest, closest) <= sphereRadius * sphereRadius) // ❌
+```
+
+এখানে `closest` হলো "বাক্সের কেন্দ্র থেকে closest point-এর offset"। কিন্তু
+সেটাকেই আমরা distance-এর মতো ব্যবহার করছি। এটা তখনই কাজ করে যখন বল
+বাক্সের বাইরে থাকে — তখন clamp সত্যিই distance-এর উপাদান হয়ে যায়। কিন্তু
+বল যখন বাক্সের **ভেতরে** থাকে, clamp কিছুই পরিবর্তন করে না, তাই
+"distance" = বল থেকে বাক্সের কেন্দ্র পর্যন্ত দূরত্ব, যেটা শূন্য না।
+
+**সঠিক কোড (Phase 4 থেকে):**
+```cpp
+glm::vec3 offset(
+    sphereCentre.x - centre.x,
+    sphereCentre.y - centre.y,
+    sphereCentre.z - centre.z);
+glm::vec3 clamped(
+    std::fmax(-half.x, std::fmin(offset.x, half.x)),
+    ...);
+glm::vec3 delta = offset - clamped;     // সত্যিকারের sphere-to-closest vector
+if (glm::dot(delta, delta) <= sphereRadius * sphereRadius) // ✅
+```
+
+এখন যদি বল বাক্সের ভেতরে থাকে, প্রতিটা axis-এ `clamped = offset`, তাই
+`delta = 0` — সংঘর্ষ। এই সংশোধনটা `FortGate.cpp`-এও করা হয়েছে, কারণ
+`Wall`-এর brick hit test একই ভুল করতো।
+
+চোখে দেখা:
+
+```cpp
+// বল বাক্সের বাইরে, কিন্তু কাছে:
+offset = (0.08, 0, 0);   // বল বাক্সের +X মুখ থেকে 0.08 m বাইরে
+clamped = (0.08, 0, 0);  // half.x এর চেয়ে ছোট, clamp কিছু করে না
+delta = (0, 0, 0);       // ❌ ভুল কোড এটাকে "0" ভাববে — কিন্তু সত্যিই দূরত্ব 0.08!
+
+// বল বাক্সের ভেতরে:
+offset = (0.1, 0.2, 0);
+clamped = (0.1, 0.2, 0); // half.x-এর চেয়ে ছোট, clamp কিছু করে না
+delta = (0, 0, 0);       // ✅ সঠিক — বল বাক্সের ভেতরে, dist = 0
+```
+
+---
+
+## পর্ব ২৯ — Phase 4: `Castle` — সব জোড়া লাগানো
+
+Castle হলো শীর্ষ-স্তরের scene-graph যে কিনা Tower দুটোকে, FortGate-কে,
+Door দুটোকে, দুটো curtain wall-কে, আর drawbridge-কে একসাথে ধরে।
+
+```cpp
+class Castle {
+public:
+    Castle(glm::vec3 centreWorld,
+           float gateWidth,
+           float wallHeight    = 3.0f,
+           float towerHeight   = 5.0f,
+           float curtainLength = 6.0f);
+
+    bool CheckHit(glm::vec3 sphereCentre, float sphereRadius);
+    int AliveDoorPanelCount() const;
+    int TotalDoorPanelCount() const;
+    int AliveBrickCount() const;
+    int TotalBrickCount() const;
+
+    void Draw(Shader& shader);
+    void Delete();
+private:
+    Door      doors;     // সদর দরজার ভেতরে
+    FortGate  gate;      // পাথরের brick stacks + lintel
+    Tower     leftTower;
+    Tower     rightTower;
+    std::vector<Part> leftCurtain;
+    std::vector<Part> rightCurtain;
+    std::vector<Part> drawbridge;
+};
+```
+
+### ২৯.১ আকার দেওয়ার হিসাব
+
+`centreWorld` হলো সদর দরজার ঠিক মাঝখান — FortGate-এর constructor যেটা চায়
+সেটাই। tower দুটো বসানো হয় `centreWorld.x ± 3.75`-এ, কারণ:
+
+```
+FortGate-এর half-width = 5.0 / 2 = 2.5 m
+Tower-এর half-side    = 2.5 / 2 = 1.25 m
+তাই outer edge = 2.5 + 1.25 = 3.75 m
+```
+
+তাই tower-এর কেন্দ্র `centreWorld.x ± 3.75`, তাদের outer face
+`± 3.75 + 1.25 = ± 5.0` — FortGate-এর পাথরের স্তম্ভের সাথে মিলে যায়।
+
+### ২৯.২ curtain walls
+
+প্রতিটা tower-এর বাইরের মুখ থেকে `curtainLength` (6 m) দূর পর্যন্ত:
+- **বাম curtain**: `x ∈ [centreWorld.x - 3.75 - 1.25 - curtainLength,
+  centreWorld.x - 3.75 - 1.25]` — কাঠামোটা `merlonD` পুরু, `wallHeight`
+  উঁচু, উপরে merlons।
+- **ডান curtain**: আয়না।
+
+curtain-এর body হলো `curtainLength × wallHeight × merlonD` একটা বাক্স,
+`Palette::Stone` রঙে। উপরে `Crenellation::AlongX` দিয়ে merlons।
+
+### ২৯.৩ drawbridge
+
+দরজার সামনে (`+Z` দিকে, যেদিকে কামান আছে) একটা পাতলা কাঠের সেতু।
+`gateWidth` চওড়া, `1.5 m` গভীর, `0.15 m` পুরু। উপরে ৪টা পাতলা প্ল্যাঙ্ক
+স্ট্রিপ — শুধুই দেখার জন্য।
+
+### ২৯.৪ CheckHit — দরজা আগে, তারপর পাথর
+
+কামান দরজা লক্ষ্য করে গুলো ছোড়ে, তাই:
+
+```cpp
+bool Castle::CheckHit(glm::vec3 sphereCentre, float sphereRadius) {
+    bool any = false;
+    if (doors.CheckHit(sphereCentre, sphereRadius)) any = true;  // দরজা আগে
+    if (gate.CheckHit (sphereCentre, sphereRadius)) any = true;   // তারপর brick
+    return any;
+}
+```
+
+এটা দরজা ভাঙার সংখ্যা বাড়ায় — গুলি দরজায় লাগলে সেটা ভাঙে, তারপর brick।
+
+### ২৯.৫ Draw — ক্রম গুরুত্বপূর্ণ
+
+```cpp
+void Castle::Draw(Shader& shader) {
+    leftTower.Draw(shader);
+    rightTower.Draw(shader);
+    for (Part& p : leftCurtain)   ...   p.mesh.Draw();
+    for (Part& p : rightCurtain)  ...   p.mesh.Draw();
+    gate.Draw(shader);              // brick + lintel + pillars
+    doors.Draw(shader);             // দরজা সবশেষে, যাতে সামনে দেখায়
+    for (Part& p : drawbridge)     ...   p.mesh.Draw();
+}
+```
+
+কেন দরজা সবশেষে? GPU-তে depth buffer আছে, তাই ক্রমানুসারে গুরুত্ব নেই
+— কিন্তু **transparency বা একই plane-এ overlap-এর** সমস্যা এড়াতে দরজা
+brick-এর চেয়ে পরে আঁকা ভালো (gate-এর brick stacks দরজার পেছনে, lintel
+দরজার উপরে — দরজা সামনে দেখানোই স্বাভাবিক)।
+
+### ২৯.৬ Main.cpp — castle wiring
+
+Phase 3-এর `FortGate` সরিয়ে `Castle` বসানো হয়েছে:
+
+```cpp
+Castle castle(vec3(12.0f, 0.0f, 0.0f),
+              /*gateWidth=*/2.0f,
+              /*wallHeight=*/3.0f,
+              /*towerHeight=*/5.0f,
+              /*curtainLength=*/6.0f);
+```
+
+আর centre cannon-এর default elevation একটু বাড়ানো হয়েছে (12° → 18°) যাতে
+গুলি Phase 3-এর ফাঁকা দরজার পরিবর্তে Phase 4-এর 3 m উঁচু কাঠের দরজায়
+লাগে।
+
+### ২৯.৭ চোখে দেখা: Phase 4 এক নজরে
+
+![phase 4 overview](images/walkthrough/phase4_overview.png)
+
+এই ছবিতে দেখা যাচ্ছে:
+
+* দুটো flanking tower (`Tower`), প্রতিটায় crenellated parapet, চারটা
+  arrow slit, একটা পতাকা
+* দুটো curtain wall (`Crenellation::AlongX`) বাম ও ডানে, মাঝে merlons
+* `FortGate`-এর brick stacks + lintel দুই tower-এর মাঝে
+* `Door`-এর দুটো কাঠের প্যানেল + `drawbridge` (সামনে কাঠের প্ল্যাঙ্ক)
+* তিনটা কামান বামে সারবদ্ধ
+* ছয়টা গাছ ডানে, পেছনে
+
+গুলি ছোড়ার পর:
+
+![phase 4 after firing](images/walkthrough/phase4_capture.png)
+
+`Castle::CheckHit` দরজা ভাঙে (দুটো panel-ই `alive = false`), তারপর brick
+stacks-এর কিছু brick ভাঙে। Count: 0/2 door panels alive, 9/16 bricks alive।
+
+---
+
 ## শব্দকোষ (Glossary)
 
 - **VAO** — Vertex Array Object. VBO-র সংখ্যাগুলো কীভাবে পড়তে হবে সেই নিয়ম GPU-তে সংরক্ষণ করে।
@@ -3012,6 +3404,11 @@ mingw32-make clean      # exe মুছে দেয়
 - **AABB** — Axis-Aligned Bounding Box। অক্ষ-সমান্তরাল একটা বাক্স যা দিয়ে গুলি-ইট সংঘর্ষ সস্তায় পরীক্ষা হয়।
 - **semi-implicit Euler** — `v.y -= g·dt; pos += v·dt;` — velocity আগে হালনাগাদ, তারপর position। সবচেয়ে সহজ কাজের পদার্থবিদ্যা ইন্টিগ্রেটর।
 - **edge detection (input)** — একটা বোতাম **প্রথমবার চাপা** হলো কি না সেই মুহূর্তটা ধরা — আগের ফ্রেমে চাপা ছিল কি না মনে রেখে। স্পেসবারের মতো "trigger" key-তে ব্যবহার হয় যাতে এক চাপে একটাই action হয়।
+- **merlon** — যুদ্ধ-চূড়ার উঁচু অংশ; দুটো merlon-এর মাঝের ফাঁককে বলে **crenel**। একসাথে: **crenellation** বা **battlement**।
+- **quoin** — দুর্গের কোণায় বসানো লম্বা পাথরের খণ্ড; প্রধান দেয়ালের চেয়ে সামান্য গাঢ় রঙে — চাক্ষুষভাবে কোণা আলাদা করে।
+- **arrow slit** — লম্বা সরু জানালা; ভেতর থেকে তীর ছোড়া যায়, বাইরের আঘাত সহ্য করে। Disney-ক্লাসিক্যাল castle-এর প্রতীক।
+- **curtain wall** — দুটো tower-এর মাঝের দীর্ঘ দেয়াল; সাধারণত crenellated।
+- **drawbridge** — দরজার সামনে কাঠের পাতলা সেতু; মাঝে মাঝে তোলা যায় (এখানে শুধুই সাজসজ্জা)।
 
 ---
 

@@ -10,3 +10,6 @@ Your task -
 5. commit phase 2,
 6. Update whats done in the code-waltkthough. 
 
+phase 4
+Instead of just a wall. Make a mini disney fantasy style castle with wodden fort doors and the cannon will point to that door and it will break. Then regenerate the latex report and pdf report with the new screenshots taken.
+

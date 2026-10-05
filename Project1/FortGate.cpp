@@ -123,12 +123,20 @@ bool FortGate::CheckHit(glm::vec3 sphereCentre, float sphereRadius) {
     for (Brick& b : bricks) {
         if (!b.alive) continue;
         glm::vec3 centre(b.local[3]);
-        glm::vec3 closest(
-            std::fmax(-half.x, std::fmin(sphereCentre.x - centre.x, half.x)),
-            std::fmax(-half.y, std::fmin(sphereCentre.y - centre.y, half.y)),
-            std::fmax(-half.z, std::fmin(sphereCentre.z - centre.z, half.z))
-        );
-        if (glm::dot(closest, closest) <= sphereRadius * sphereRadius) {
+        // Offset of the sphere from the brick centre, clamped per-axis to the
+        // brick's half-extents. Subtract the clamped offset from the raw
+        // offset to get the actual sphere-to-closest-point vector (zero when
+        // the sphere centre is inside the brick).
+        glm::vec3 offset(
+            sphereCentre.x - centre.x,
+            sphereCentre.y - centre.y,
+            sphereCentre.z - centre.z);
+        glm::vec3 clamped(
+            std::fmax(-half.x, std::fmin(offset.x, half.x)),
+            std::fmax(-half.y, std::fmin(offset.y, half.y)),
+            std::fmax(-half.z, std::fmin(offset.z, half.z)));
+        glm::vec3 delta = offset - clamped;
+        if (glm::dot(delta, delta) <= sphereRadius * sphereRadius) {
             b.alive = false;
             anyKilled = true;
         }

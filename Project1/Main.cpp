@@ -18,6 +18,9 @@
 #include "Projectile.h"
 #include "Wall.h"
 #include "FortGate.h"
+#include "Castle.h"
+#include "Tower.h"
+#include "Door.h"
 #include "Tree.h"
 #include "Robot.h"
 
@@ -58,30 +61,42 @@ int main() {
 	Cannon leftCannon  (vec3(0.0f, 0.0f,  cannonSpacing));
 	Cannon rightCannon (vec3(0.0f, 0.0f, -cannonSpacing));
 
-	// --- Phase 3: fort gate (replace the simple Phase-2 wall) ------------
-	// Centre cannon fires at the middle of the gate; the gate's doorway is
-	// wide enough (2.0 m) that the cannon ball fits even with a small aim
-	// error. Width/height/depth picked so the gate has the chunky proportions
-	// of a real medieval front wall.
-	FortGate wall(vec3(12.0f, 0.0f, 0.0f),
-	             /*width=*/5.0f, /*height=*/3.0f, /*depth=*/0.8f,
-	             /*gateWidth=*/2.0f, /*rows=*/4);
+	// --- Phase 4: the Disney-style castle ---------------------------------
+	// The centre cannon's default elevation (12 deg) was tuned for the
+	// Phase 3 flat wall, but the door sits a bit higher (3 m tall). At
+	// 14 m/s and 18 deg the range is ~12 m, so a level shot lands squarely
+	// on the door. The two flankers are left at their default elevation
+	// for visual symmetry.
+	centreCannon.Elevate(6.0f);   // 12 -> 18 deg
 
-	// --- Phase 3: a row of trees behind the fort ------------------------
+	// gateWidth = 2.0 m matches the Phase 3 doorway. wallHeight = 3.0 m
+	// matches the Phase 3 lintel. towerHeight = 5.0 m makes the towers
+	// visibly taller than the wall (the Disney look). curtainLength = 6.0 m
+	// extends the crenellated wall 6 m out from each tower.
+	Castle castle(vec3(12.0f, 0.0f, 0.0f),
+	              /*gateWidth=*/2.0f,
+	              /*wallHeight=*/3.0f,
+	              /*towerHeight=*/5.0f,
+	              /*curtainLength=*/6.0f);
+
+	// --- Phase 3: a row of trees behind the castle -----------------------
+	// The curtain walls extend 6 m left and right of the towers, so push
+	// the trees a bit further back (and to the side) to avoid overlap.
 	std::vector<Tree> trees;
 	for (int i = 0; i < 6; i++) {
-		float x = 18.0f + float(i) * 3.0f;
+		float x = 22.0f + float(i) * 3.0f;
 		float z = -8.0f + float(i % 2) * 4.0f;   // alternate front/back for a less-row look
 		trees.emplace_back(vec3(x, 0.0f, z),
 		                   /*trunkH=*/2.0f, /*trunkR=*/0.20f,
 		                   /*crownH=*/3.0f, /*crownR=*/1.5f);
 	}
 
-	// --- Phase 3: the wooden dummy robot inside the fort, past the gate --
-	// Gate's bricks sit at x = 11.6 to x = 12.4; the robot is placed
-	// further past that, so it stands INSIDE the fort rather than in
-	// front of it. A cannon ball aimed through the doorway will hit it.
-	Robot robot(vec3(13.0f, 0.0f, 0.0f));
+	// --- Phase 3: the wooden dummy robot inside the castle, past the gate --
+	// Castle's bricks sit at x = 11.6 to x = 12.4; the door is in front of
+	// them at x = 11.95 (z = 0); the robot is placed further past that, so
+	// it stands INSIDE the fort rather than in front of it. A cannon ball
+	// that breaks through both door panels will hit it.
+	Robot robot(vec3(13.5f, 0.0f, 0.0f));
 
 	std::vector<Projectile> projectiles;
 
@@ -144,7 +159,7 @@ int main() {
 		// --- Update projectiles and check the gate -------------------------
 		for (Projectile& ball : projectiles) {
 			ball.Update(deltaTime, Projectile::Gravity);
-			wall.CheckHit(ball.GetPosition(), ball.GetRadius());
+			castle.CheckHit(ball.GetPosition(), ball.GetRadius());
 		}
 		projectiles.erase(
 			std::remove_if(projectiles.begin(), projectiles.end(),
@@ -165,7 +180,7 @@ int main() {
 		ground.Draw();
 
 		for (Tree& t : trees) t.Draw(shaderProgram);
-		wall.Draw(shaderProgram);
+		castle.Draw(shaderProgram);
 		robot.Draw(shaderProgram);
 
 		// Three cannons side by side.
@@ -185,7 +200,7 @@ int main() {
 	centreCannon.Delete();
 	leftCannon.Delete();
 	rightCannon.Delete();
-	wall.Delete();
+	castle.Delete();
 	for (Tree& t : trees) t.Delete();
 	robot.Delete();
 	for (Projectile& ball : projectiles) ball.Delete();
