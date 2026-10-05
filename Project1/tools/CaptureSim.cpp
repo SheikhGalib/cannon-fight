@@ -60,6 +60,8 @@
 #include "SignalTower.h"
 #include "Tree.h"
 #include "Water.h"
+#include "Ladder.h"
+#include "ParticleSystem.h"
 
 using namespace glm;
 using namespace std;
@@ -110,7 +112,17 @@ static bool SaveBMP(const std::string& path, int w, int h, const std::vector<uns
 
 // Forward-declare the battle sim phases (kept identical to Main.cpp).
 enum class TimeOfDay { Day, Night };
-enum class BattlePhase { Inactive, BridgeUp, Defending, Advance, Melee, End };
+enum class BattlePhase {
+    Inactive,
+    Patrol,
+    Alarm,
+    Barrage,
+    ShootHinges,
+    CannonSiege,
+    Charge,
+    Melee,
+    End
+};
 enum class FireState { Idle, CrewWalking, Lighting, CrewReturning };
 
 struct FireSequence {
@@ -143,28 +155,23 @@ int main() {
     glViewport(0, 0, CAPTURE_W, CAPTURE_H);
     glEnable(GL_DEPTH_TEST);
 
-    Shader shaderProgram("gouraud.vert", "gouraud.frag");
+    Shader shaderProgram("lit.vert", "lit.frag");
 
     // ----- Scene (a copy of Main.cpp's main setup) -----
     Mesh ground = Primitives::CreatePlane(400.0f, 400.0f, Palette::Grass);
     Water river(vec3(-4.0f, 0.0f, 0.0f), 12.0f, 480.0f);
+    const float kCannonStartX  = -23.0f;
+    const float kCannonBattleX = -15.0f;
+    const float cannonSpacing  = 2.5f;
+    Cannon leftCannon  (vec3(kCannonStartX, 0.0f,  cannonSpacing));
+    Cannon centreCannon(vec3(kCannonStartX, 0.0f,  0.0f));
+    Cannon rightCannon (vec3(kCannonStartX, 0.0f, -cannonSpacing));
 
-    const float cannonX = -15.0f;
-    const float cannonSpacing = 2.5f;
-    Cannon leftCannon  (vec3(cannonX, 0.0f,  cannonSpacing));
-    Cannon centreCannon(vec3(cannonX, 0.0f,  0.0f));
-    Cannon rightCannon (vec3(cannonX, 0.0f, -cannonSpacing));
-
-    // Centre cannon aims directly at the wooden door (x = 0, z = 0)
-    centreCannon.Elevate(10.0f);
-
-    // Left cannon aims at the front left wall (z = +7.5)
-    leftCannon.Elevate(13.0f);
-    leftCannon.Yaw(19.0f);
-
-    // Right cannon aims at the front right wall (z = -7.5)
-    rightCannon.Elevate(13.0f);
-    rightCannon.Yaw(-19.0f);
+    centreCannon.Elevate(11.5f);
+    leftCannon.Elevate(12.5f);
+    leftCannon.Yaw(-18.5f);
+    rightCannon.Elevate(12.5f);
+    rightCannon.Yaw(+18.5f);
 
     CompoundCastle castle(vec3(12.0f, 0.0f, 0.0f));
 
@@ -175,18 +182,35 @@ int main() {
     archers.emplace_back(vec3(12.0f - halfCompound, cornerTowerTopY, -halfCompound));
     archers.emplace_back(vec3(12.0f + halfCompound, cornerTowerTopY, -halfCompound));
     archers.emplace_back(vec3(12.0f - halfCompound, cornerTowerTopY,  halfCompound));
-    archers.emplace_back(vec3(12.0f + halfCompound, cornerTowerTopY,  halfCompound));
     archers.emplace_back(vec3(0.0f, gatehouseTowerTopY, -3.75f));
     archers.emplace_back(vec3(0.0f, gatehouseTowerTopY,  3.75f));
-    for (Archer& a : archers) a.SetYaw(90.0f);
+    // Archers face the battlefield (-X)
+    for (Archer& a : archers) a.SetYaw(180.0f);
 
+    // Wooden rampart access ladder leaning against inner North side wall
+    Ladder ladder(vec3(6.5f, 0.0f, -10.2f), vec3(6.5f, 2.95f, -11.3f), 0.50f, 8);
+    ParticleSystem particleSystem;
+    particleSystem.Init();
+
+    // Sentry placement across front, side, and back walls
     std::vector<Soldier> wallSoldiers;
-    wallSoldiers.emplace_back(vec3(0.8f, 2.9f, -8.5f), Palette::Defender);
-    wallSoldiers.emplace_back(vec3(0.8f, 2.9f, -5.5f), Palette::Defender);
-    wallSoldiers.emplace_back(vec3(0.8f, 2.9f, +5.5f), Palette::Defender);
-    wallSoldiers.emplace_back(vec3(0.8f, 2.9f, +8.5f), Palette::Defender);
-    for (Soldier& s : wallSoldiers) s.SetYaw(180.0f);
-    std::vector<bool> wallSoldierAlive(4, true);
+    wallSoldiers.emplace_back(vec3(0.8f,  2.9f, -7.0f),  Palette::Defender); // [0] West front wall (North segment)
+    wallSoldiers.emplace_back(vec3(0.8f,  2.9f, +7.0f),  Palette::Defender); // [1] West front wall (South segment)
+    wallSoldiers.emplace_back(vec3(6.5f,  2.9f, -11.8f), Palette::Defender); // [2] North side wall (front half)
+    wallSoldiers.emplace_back(vec3(16.0f, 2.9f, -11.8f), Palette::Defender); // [3] North side wall (rear half)
+    wallSoldiers.emplace_back(vec3(6.5f,  2.9f, +11.8f), Palette::Defender); // [4] South side wall (front half)
+    wallSoldiers.emplace_back(vec3(16.0f, 2.9f, +11.8f), Palette::Defender); // [5] South side wall (rear half)
+    wallSoldiers.emplace_back(vec3(23.8f, 2.9f, -5.0f),  Palette::Defender); // [6] East back wall (North half)
+    wallSoldiers.emplace_back(vec3(23.8f, 2.9f, +5.0f),  Palette::Defender); // [7] East back wall (South half)
+    wallSoldiers[0].SetYaw(180.0f);
+    wallSoldiers[1].SetYaw(180.0f);
+    wallSoldiers[2].SetYaw(90.0f);
+    wallSoldiers[3].SetYaw(90.0f);
+    wallSoldiers[4].SetYaw(270.0f);
+    wallSoldiers[5].SetYaw(270.0f);
+    wallSoldiers[6].SetYaw(0.0f);
+    wallSoldiers[7].SetYaw(0.0f);
+    std::vector<bool> wallSoldierAlive(8, true);
 
     Mesh sunCore   = Primitives::CreateSphere(4.5f, 20, 20, Palette::Sun);
     Mesh sunCorona = Primitives::CreateSphere(7.0f, 16, 16, glm::vec3(1.0f, 0.96f, 0.60f));
@@ -196,16 +220,22 @@ int main() {
     }
 
     const float crewZOffset = -0.7f;
-    Soldier crewLeft (vec3(cannonX - 1.8f, 0.0f,  cannonSpacing + crewZOffset), Palette::Attacker);
-    Soldier crewCentre(vec3(cannonX - 1.8f, 0.0f,  0.0f + crewZOffset),       Palette::Attacker);
-    Soldier crewRight(vec3(cannonX - 1.8f, 0.0f, -cannonSpacing + crewZOffset),Palette::Attacker);
+    Soldier crewLeft (vec3(kCannonStartX - 1.8f, 0.0f,  cannonSpacing + crewZOffset), Palette::Attacker);
+    Soldier crewCentre(vec3(kCannonStartX - 1.8f, 0.0f,  0.0f + crewZOffset),       Palette::Attacker);
+    Soldier crewRight(vec3(kCannonStartX - 1.8f, 0.0f, -cannonSpacing + crewZOffset),Palette::Attacker);
 
     std::vector<Soldier> army;
+    std::vector<vec3> armyCampPos;
+    std::vector<vec3> armyBattlePos;
     for (int row = 0; row < 3; row++) {
         for (int col = 0; col < 5; col++) {
-            float x = cannonX - 6.0f - float(row) * 1.5f;
-            float z = (float(col) - 2.0f) * 2.0f;
-            army.emplace_back(vec3(x, 0.0f, z), Palette::Attacker);
+            float bx = kCannonBattleX - 6.0f - float(row) * 1.5f;
+            float bz = (float(col) - 2.0f) * 2.0f;
+            float cx = kCannonStartX - 5.0f - float(row) * 1.5f;
+            float cz = bz;
+            armyBattlePos.emplace_back(bx, 0.0f, bz);
+            armyCampPos.emplace_back(cx, 0.0f, cz);
+            army.emplace_back(vec3(cx, 0.0f, cz), Palette::Attacker);
         }
     }
     for (Soldier& s : army) s.SetYaw(0.0f);
@@ -225,7 +255,7 @@ int main() {
     std::vector<CampTent> tents;
     for (int r = 0; r < 2; r++) {
         for (int c = 0; c < 3; c++) {
-            float tx = cannonX - 6.0f + float(r) * 4.0f;   // x = -21 .. -17
+            float tx = kCannonBattleX - 6.0f + float(r) * 4.0f;   // x = -21 .. -17
             float tz = -16.0f - float(r) * 6.0f - float(c) * 4.0f;  // z = -28 .. -16
             tents.emplace_back(vec3(tx, 0.0f, tz), 1.5f, 2.2f,
                                Palette::TentCloth, Palette::TentBase);
@@ -279,12 +309,12 @@ int main() {
     fireLeft.crew   = &crewLeft;
     fireCentre.crew = &crewCentre;
     fireRight.crew  = &crewRight;
-    fireLeft.crewRestPos   = vec3(cannonX - 1.8f, 0.0f,  cannonSpacing + crewZOffset);
-    fireCentre.crewRestPos = vec3(cannonX - 1.8f, 0.0f,  0.0f + crewZOffset);
-    fireRight.crewRestPos  = vec3(cannonX - 1.8f, 0.0f, -cannonSpacing + crewZOffset);
-    fireLeft.crewFirePos   = vec3(cannonX - 0.8f, 0.0f,  cannonSpacing + crewZOffset);
-    fireCentre.crewFirePos = vec3(cannonX - 0.8f, 0.0f,  0.0f + crewZOffset);
-    fireRight.crewFirePos  = vec3(cannonX - 0.8f, 0.0f, -cannonSpacing + crewZOffset);
+    fireLeft.crewRestPos   = vec3(kCannonStartX - 1.8f, 0.0f,  cannonSpacing + crewZOffset);
+    fireCentre.crewRestPos = vec3(kCannonStartX - 1.8f, 0.0f,  0.0f + crewZOffset);
+    fireRight.crewRestPos  = vec3(kCannonStartX - 1.8f, 0.0f, -cannonSpacing + crewZOffset);
+    fireLeft.crewFirePos   = vec3(kCannonStartX - 0.8f, 0.0f,  cannonSpacing + crewZOffset);
+    fireCentre.crewFirePos = vec3(kCannonStartX - 0.8f, 0.0f,  0.0f + crewZOffset);
+    fireRight.crewFirePos  = vec3(kCannonStartX - 0.8f, 0.0f, -cannonSpacing + crewZOffset);
 
     std::vector<bool> archerAlive(archers.size(), true);
     std::vector<bool> defenderAlive(defenders.size(), true);
@@ -308,6 +338,15 @@ int main() {
     float meleeTimer = 0.0f;
     float meleeHitTimer = 0.0f;
 
+    bool  cannoneerHit = false;
+    bool  cannoneerReplaced = false;
+    bool  hingeShotFired = false;
+    bool  hingeDestroyed = false;
+    int   cannonSiegeStep = 0;
+    float cannonSiegeTimer = 0.0f;
+    int   winnerOutcome = rand() % 2; // randomized each run!
+    float spotterSmokeTimer = 0.0f;
+
     std::vector<Arrow> arrows;
     std::vector<Projectile> projectiles;
 
@@ -319,14 +358,11 @@ int main() {
     // Camera: lock to a cinematic top-down-ish angle for the video.
     float camYaw   = 0.7f;
     float camPitch = 0.40f;
-    float camRadius = 55.0f;
-    vec3  camTarget(12.0f, 4.0f, 0.0f);
+    float camRadius = 52.0f;
+    vec3  camTarget(3.5f, 3.5f, 0.0f);
     auto computeView = [&]() {
         float cy = std::cos(camYaw),  sy = std::sin(camYaw);
         float cp = std::cos(camPitch), sp = std::sin(camPitch);
-        // dir points from eye TOWARD target; eye is the opposite
-        // side.  Negative dir.y so the camera is above target
-        // looking down.
         vec3 dir = vec3(cp * cy, -sp, cp * sy);
         vec3 eye = camTarget - dir * camRadius;
         return lookAt(eye, camTarget, vec3(0.0f, 1.0f, 0.0f));
@@ -339,6 +375,8 @@ int main() {
     GLuint projLoc = glGetUniformLocation(shaderProgram.ID, "proj");
     GLuint modelLoc = glGetUniformLocation(shaderProgram.ID, "model");
     GLuint lightDirLoc = glGetUniformLocation(shaderProgram.ID, "lightDir");
+    GLuint viewPosLoc  = glGetUniformLocation(shaderProgram.ID, "viewPos");
+    GLuint ambStrLoc   = glGetUniformLocation(shaderProgram.ID, "ambientStrength");
 
     auto lerpSoldier = [](Soldier& s, const vec3& from, const vec3& to,
                           float timer, float seconds) {
@@ -348,6 +386,10 @@ int main() {
     };
 
     auto tickCannon = [&](Cannon& cannon, FireSequence& seq, float dt) {
+        if (!seq.crew || seq.crew->IsDead() || seq.crew->health <= 0.0f) {
+            seq.state = FireState::Idle;
+            return;
+        }
         switch (seq.state) {
             case FireState::Idle:
                 seq.crew->SetPosition(seq.crewRestPos);
@@ -391,34 +433,15 @@ int main() {
     std::vector<unsigned char> framebuffer(CAPTURE_W * CAPTURE_H * 3);
 
     // ----- Run loop -----
-    // Start the battle simulation immediately (skip the Inactive pause).
-    battle = BattlePhase::BridgeUp;
+    // Start with Patrol to show normal sentry patrolling and ladder relief,
+    // then attackers marching in, spotter red smoke, bridge drawn up, cannon fight, etc.
+    battle = BattlePhase::Patrol;
     battleTimer = 0.0f;
     float dt = 1.0f / 30.0f;        // 30 fps capture - keeps the video small
     const int kMaxFrames = 30 * 60;  // up to 60 seconds of footage
     int frameIdx = 0;
     bool battleFinished = false;
     while (frameIdx < kMaxFrames && !battleFinished) {
-        // ---- Input: simulate cannon auto-fire during Advance ----
-        if (battle == BattlePhase::Advance) {
-            cannonAutoFireTimer += dt;
-            if (cannonAutoFireTimer >= cannonAutoFirePeriod) {
-                cannonAutoFireTimer = 0.0f;
-                // One cannon shoots door (centre, 1), one shoots left wall (0), one shoots right wall (2)
-                static const int kFireOrder[3] = { 1, 0, 2 };
-                FireSequence* sq[3] = { &fireLeft, &fireCentre, &fireRight };
-                for (int attempt = 0; attempt < 3; attempt++) {
-                    int targetIdx = kFireOrder[(cannonFireStep + attempt) % 3];
-                    if (sq[targetIdx]->state == FireState::Idle) {
-                        sq[targetIdx]->state = FireState::CrewWalking;
-                        sq[targetIdx]->timer = 0.0f;
-                        cannonFireStep = (cannonFireStep + attempt + 1) % 3;
-                        break;
-                    }
-                }
-            }
-        }
-
         // ---- Tick cannons ----
         tickCannon(leftCannon,   fireLeft,   dt);
         tickCannon(centreCannon, fireCentre, dt);
@@ -430,8 +453,12 @@ int main() {
         // ---- Update projectiles ----
         for (Projectile& ball : projectiles) {
             ball.Update(dt, Projectile::Gravity);
-            castle.CheckHit(ball.GetPosition(), ball.GetRadius());
-            if (castle.HitsStatic(ball.GetPosition(), ball.GetRadius())) {
+            if (castle.CheckHit(ball.GetPosition(), ball.GetRadius() + 0.8f)) {
+                particleSystem.EmitDebris(ball.GetPosition(), 30);
+                particleSystem.EmitSmoke(ball.GetPosition(), vec3(0.0f, 1.0f, 0.0f), 12);
+                ball.Kill();
+            } else if (castle.HitsStatic(ball.GetPosition(), ball.GetRadius())) {
+                particleSystem.EmitDebris(ball.GetPosition(), 30);
                 ball.Kill();
             }
         }
@@ -441,80 +468,418 @@ int main() {
             projectiles.end());
         castle.Update(dt);
 
+        // ---- Update character animations every frame ----
+        for (Soldier& s : army) s.Update(dt);
+        for (Soldier& s : wallSoldiers) s.Update(dt);
+        for (Soldier& s : defenders) s.Update(dt);
+        crewLeft.Update(dt);
+        crewCentre.Update(dt);
+        crewRight.Update(dt);
+        for (Archer& a : archers) a.Update(dt);
+
         // ---- Battle sim state machine ----
         if (battle != BattlePhase::Inactive && !battlePaused) {
             battleTimer += dt;
         }
-        if (battle == BattlePhase::BridgeUp) {
-            castle.SetBridgeRaised(true);
-            if (battleTimer > 2.0f) { battle = BattlePhase::Defending; battleTimer = 0.0f; }
-        } else if (battle == BattlePhase::Defending) {
-            castle.SetBridgeRaised(true);
-            int livingAttackers = 0; for (bool a : armyAlive)   if (a) ++livingAttackers;
-            int livingArchers   = 0; for (bool a : archerAlive) if (a) ++livingArchers;
-            if (battleTimer > 5.0f || livingAttackers <= 0 || livingArchers <= 0) {
-                battle = BattlePhase::Advance; battleTimer = 0.0f;
-                castle.SetBridgeRaised(false);
-            }
-        } else if (battle == BattlePhase::Advance) {
-            castle.SetBridgeRaised(false);
-            bool doorBroken = (castle.AliveDoorPanelCount() == 0);
-            if (battleTimer > 20.0f && !doorBroken) {
-                doorBroken = true;
+
+        // Phase 1: Sentry patrol on all ramparts + slow ladder relief on North side wall
+        if (battle == BattlePhase::Patrol) {
+            float pTime = battleTimer;
+
+            // Front West ramparts sentries [0] and [1] patrol along Z (no ladder replacement!)
+            float z0 = -7.0f + 1.8f * std::sin(pTime * 0.8f);
+            wallSoldiers[0].SetPosition(vec3(0.8f, 2.9f, z0));
+            wallSoldiers[0].SetYaw(180.0f);
+            wallSoldiers[0].SetMarching(true);
+
+            float z1 = +7.0f + 1.8f * std::cos(pTime * 0.8f);
+            wallSoldiers[1].SetPosition(vec3(0.8f, 2.9f, z1));
+            wallSoldiers[1].SetYaw(180.0f);
+            wallSoldiers[1].SetMarching(true);
+
+            // North side wall rear sentry [3] patrols along X
+            float x3 = 16.0f + 2.0f * std::sin(pTime * 0.7f);
+            wallSoldiers[3].SetPosition(vec3(x3, 2.9f, -11.8f));
+            wallSoldiers[3].SetYaw(90.0f);
+            wallSoldiers[3].SetMarching(true);
+
+            // South side wall sentries [4] and [5] patrol along X
+            float x4 = 6.5f + 2.0f * std::sin(pTime * 0.7f);
+            wallSoldiers[4].SetPosition(vec3(x4, 2.9f, +11.8f));
+            wallSoldiers[4].SetYaw(270.0f);
+            wallSoldiers[4].SetMarching(true);
+
+            float x5 = 16.0f - 2.0f * std::sin(pTime * 0.7f);
+            wallSoldiers[5].SetPosition(vec3(x5, 2.9f, +11.8f));
+            wallSoldiers[5].SetYaw(270.0f);
+            wallSoldiers[5].SetMarching(true);
+
+            // East back wall sentries [6] and [7] patrol along Z
+            float z6 = -5.0f + 2.0f * std::cos(pTime * 0.7f);
+            wallSoldiers[6].SetPosition(vec3(23.8f, 2.9f, z6));
+            wallSoldiers[6].SetYaw(0.0f);
+            wallSoldiers[6].SetMarching(true);
+
+            float z7 = +5.0f + 2.0f * std::sin(pTime * 0.7f);
+            wallSoldiers[7].SetPosition(vec3(23.8f, 2.9f, z7));
+            wallSoldiers[7].SetYaw(0.0f);
+            wallSoldiers[7].SetMarching(true);
+
+            // Unhurried ladder relief on North side wall (14.0s cycle, between wallSoldiers[2] and defenders[0]):
+            float loopT = std::fmod(pTime, 14.0f);
+            if (loopT < 4.0f) {
+                float u = loopT / 4.0f;
+                float xPatrol = 5.0f + 3.0f * std::sin(u * 3.14159f);
+                wallSoldiers[2].SetPosition(vec3(xPatrol, 2.9f, -11.8f));
+                wallSoldiers[2].SetYaw(90.0f);
+                wallSoldiers[2].SetMarching(true);
+
+                defenders[0].SetPosition(vec3(6.5f, 0.0f, -8.0f));
+                defenders[0].SetYaw(90.0f);
+                defenders[0].SetMarching(false);
+            } else if (loopT < 6.0f) {
+                float u = (loopT - 4.0f) / 2.0f;
+                wallSoldiers[2].SetPosition(glm::mix(vec3(5.0f, 2.9f, -11.8f), vec3(6.5f, 2.95f, -11.3f), u));
+                wallSoldiers[2].SetYaw(90.0f);
+                wallSoldiers[2].SetMarching(true);
+
+                defenders[0].SetPosition(glm::mix(vec3(6.5f, 0.0f, -8.0f), vec3(6.5f, 0.0f, -10.2f), u));
+                defenders[0].SetYaw(90.0f);
+                defenders[0].SetMarching(true);
+            } else if (loopT < 10.0f) {
+                float u = (loopT - 6.0f) / 4.0f;
+                vec3 topLadder(6.5f, 2.95f, -11.3f);
+                vec3 botLadder(6.5f, 0.0f, -10.2f);
+                wallSoldiers[2].SetPosition(glm::mix(topLadder, botLadder, u));
+                wallSoldiers[2].SetYaw(270.0f);
+                wallSoldiers[2].SetMarching(true);
+
+                defenders[0].SetPosition(glm::mix(botLadder, topLadder, u));
+                defenders[0].SetYaw(90.0f);
+                defenders[0].SetMarching(true);
+            } else if (loopT < 12.0f) {
+                float u = (loopT - 10.0f) / 2.0f;
+                wallSoldiers[2].SetPosition(glm::mix(vec3(6.5f, 0.0f, -10.2f), vec3(6.5f, 0.0f, -7.0f), u));
+                wallSoldiers[2].SetYaw(270.0f);
+                wallSoldiers[2].SetMarching(true);
+
+                defenders[0].SetPosition(glm::mix(vec3(6.5f, 2.95f, -11.3f), vec3(8.0f, 2.9f, -11.8f), u));
+                defenders[0].SetYaw(90.0f);
+                defenders[0].SetMarching(true);
+            } else {
+                float u = (loopT - 12.0f) / 2.0f;
+                float xRelief = 8.0f - 3.0f * u;
+                defenders[0].SetPosition(vec3(xRelief, 2.9f, -11.8f));
+                defenders[0].SetYaw(270.0f);
+                defenders[0].SetMarching(true);
+
+                wallSoldiers[2].SetPosition(vec3(6.5f, 0.0f, -7.0f));
+                wallSoldiers[2].SetYaw(90.0f);
+                wallSoldiers[2].SetMarching(false);
             }
 
-            // Trigger the army march in strictly TWO LINES across the drawbridge
-            if (doorBroken && !armyMarchStarted) {
+            if (battleTimer >= 6.0f) {
+                battle = BattlePhase::Alarm;
+                battleTimer = 0.0f;
+            }
+        } else if (battle == BattlePhase::Alarm) {
+            // Attackers (cannons, crew, and army) all march forward together from rear camps to battle ground
+            float marchT = std::min(1.0f, battleTimer / 4.0f);
+
+            // Cannons roll forward from kCannonStartX (-23m) to kCannonBattleX (-15m)
+            float curCannonX = glm::mix(kCannonStartX, kCannonBattleX, marchT);
+            leftCannon.SetPosition(vec3(curCannonX, 0.0f,  cannonSpacing));
+            centreCannon.SetPosition(vec3(curCannonX, 0.0f, 0.0f));
+            rightCannon.SetPosition(vec3(curCannonX, 0.0f, -cannonSpacing));
+
+            // Crews march alongside their cannons
+            float curCrewX = curCannonX - 1.8f;
+            crewLeft.SetPosition(vec3(curCrewX, 0.0f,  cannonSpacing + crewZOffset));
+            crewCentre.SetPosition(vec3(curCrewX, 0.0f, 0.0f + crewZOffset));
+            crewRight.SetPosition(vec3(curCrewX, 0.0f, -cannonSpacing + crewZOffset));
+            crewLeft.SetMarching(marchT < 1.0f);
+            crewCentre.SetMarching(marchT < 1.0f);
+            crewRight.SetMarching(marchT < 1.0f);
+            crewLeft.SetYaw(0.0f); crewCentre.SetYaw(0.0f); crewRight.SetYaw(0.0f);
+
+            fireLeft.crewRestPos   = vec3(kCannonBattleX - 1.8f, 0.0f,  cannonSpacing + crewZOffset);
+            fireCentre.crewRestPos = vec3(kCannonBattleX - 1.8f, 0.0f,  0.0f + crewZOffset);
+            fireRight.crewRestPos  = vec3(kCannonBattleX - 1.8f, 0.0f, -cannonSpacing + crewZOffset);
+            fireLeft.crewFirePos   = vec3(kCannonBattleX - 0.8f, 0.0f,  cannonSpacing + crewZOffset);
+            fireCentre.crewFirePos = vec3(kCannonBattleX - 0.8f, 0.0f,  0.0f + crewZOffset);
+            fireRight.crewFirePos  = vec3(kCannonBattleX - 0.8f, 0.0f, -cannonSpacing + crewZOffset);
+
+            // Army infantry march forward in formation
+            for (size_t si = 0; si < army.size(); si++) {
+                army[si].SetPosition(glm::mix(armyCampPos[si], armyBattlePos[si], marchT));
+                army[si].SetMarching(marchT < 1.0f);
+                army[si].SetYaw(0.0f);
+            }
+
+            // Spotter atop NW gatehouse tower spots incoming attackers and triggers RED SMOKE!
+            spotterSmokeTimer += dt;
+            if (spotterSmokeTimer >= 0.22f) {
+                spotterSmokeTimer = 0.0f;
+                particleSystem.EmitRedSmoke(vec3(0.0f, 5.6f, -3.75f), 12);
+            }
+
+            // Castle alarm sounds: drawbridge raises!
+            castle.SetBridgeRaised(true);
+
+            if (battleTimer >= 4.5f) {
+                battle = BattlePhase::Barrage;
+                battleTimer = 0.0f;
+                for (Soldier& s : army) s.SetMarching(false);
+                crewLeft.SetMarching(false);
+                crewCentre.SetMarching(false);
+                crewRight.SetMarching(false);
+            }
+        } else if (battle == BattlePhase::Barrage) {
+            castle.SetBridgeRaised(true);
+
+            // Attacking infantry raise their shields!
+            for (Soldier& s : army) s.SetShieldRaised(true);
+
+            // Archers on castle towers loose arrows in volleys
+            archerFireTimer += dt;
+            if (archerFireTimer >= 1.0f) {
+                archerFireTimer = 0.0f;
+                for (size_t ai = 0; ai < archers.size(); ai++) {
+                    if (!archerAlive[ai]) continue;
+                    archers[ai].TriggerShootAnim();
+                    vec3 archerPos = archers[ai].GetPosition() + vec3(0.0f, 1.4f, 0.0f);
+                    vec3 target = (ai % 2 == 0) ? crewCentre.GetPosition() : army[ai % army.size()].GetPosition();
+                    target.y += 1.0f;
+                    vec3 diff = target - archerPos;
+                    float dist = glm::length(diff);
+                    if (dist > 0.1f) {
+                        vec3 v = diff / 1.1f;
+                        v.y += 0.5f * 9.81f * 1.1f; // ballistic arc
+                        arrows.emplace_back(archerPos, v);
+                    }
+                }
+            }
+
+            // Cannoneer (crewCentre) steps up to light cannon without a shield
+            if (battleTimer < 2.0f) {
+                float walkT = std::min(1.0f, battleTimer / 1.0f);
+                crewCentre.SetPosition(glm::mix(fireCentre.crewRestPos, fireCentre.crewFirePos, walkT));
+                crewCentre.SetYaw(0.0f);
+            } else if (battleTimer >= 2.0f && !cannoneerHit) {
+                cannoneerHit = true;
+                crewCentre.SetDead();
+                fireCentre.crew = nullptr; // CANNOT FIRE WITHOUT CANNONEER!
+                particleSystem.EmitSparks(crewCentre.GetPosition() + vec3(0.0f, 1.2f, 0.0f), vec3(0, 1, 0), 20);
+            }
+
+            // Replacement soldier breaks formation from army and rushes to take over cannon!
+            if (cannoneerHit && battleTimer >= 2.4f) {
+                float repT = std::min(1.0f, (battleTimer - 2.4f) / 1.6f);
+                vec3 repStart = armyBattlePos[2];
+                vec3 repTarget = fireCentre.crewFirePos;
+                army[2].SetPosition(glm::mix(repStart, repTarget, repT));
+                army[2].SetShieldRaised(false);
+                army[2].SetMarching(repT < 1.0f);
+                army[2].SetYaw(0.0f);
+                if (repT >= 1.0f && !cannoneerReplaced) {
+                    cannoneerReplaced = true;
+                    fireCentre.crew = &army[2]; // Cannoneer arrives! Now cannon can fire!
+                }
+            }
+
+            if (battleTimer >= 5.0f) {
+                battle = BattlePhase::ShootHinges;
+                battleTimer = 0.0f;
+            }
+        } else if (battle == BattlePhase::ShootHinges) {
+            castle.SetBridgeRaised(true);
+
+            // Replacement cannoneer fires centre cannon at bridge hinges!
+            if (battleTimer >= 0.8f && !hingeShotFired) {
+                if (fireCentre.crew != nullptr && !fireCentre.crew->IsDead() && fireCentre.crew->health > 0.0f) {
+                    hingeShotFired = true;
+                    centreCannon.SetYaw(0.0f);
+                    centreCannon.SetElevation(14.5f);
+                    centreCannon.Fire();
+                    vec3 muzzle = centreCannon.GetMuzzleWorldPosition();
+                    vec3 fwd = centreCannon.GetForwardWorldDirection();
+                    particleSystem.EmitSmoke(muzzle, fwd, 25);
+                    particleSystem.EmitSparks(muzzle, fwd, 35);
+                    projectiles.emplace_back(muzzle, fwd * Projectile::DefaultSpeed, Projectile::DefaultRadius);
+                }
+            }
+
+            // Ball strikes hinges at t = 1.4s
+            if (battleTimer >= 1.4f && !hingeDestroyed) {
+                hingeDestroyed = true;
+                particleSystem.EmitDebris(vec3(0.0f, 2.5f, 0.0f), 35);
+                particleSystem.EmitSparks(vec3(0.0f, 2.5f, 0.0f), vec3(0.0f, 1.0f, 0.0f), 30);
+                // Bridge hinges broken! Bridge drops flat across river!
+                castle.SetBridgeRaised(false);
+            }
+
+            // Impact splash on river bank when bridge hits flat
+            if (battleTimer >= 2.0f && battleTimer < 2.2f) {
+                particleSystem.EmitSmoke(vec3(-8.0f, 0.15f, 0.0f), vec3(0, 1, 0), 20);
+            }
+
+            if (battleTimer >= 3.5f) {
+                battle = BattlePhase::CannonSiege;
+                battleTimer = 0.0f;
+                cannonSiegeStep = 0;
+                cannonSiegeTimer = 0.0f;
+            }
+        } else if (battle == BattlePhase::CannonSiege) {
+            castle.SetBridgeRaised(false);
+            cannonSiegeTimer += dt;
+
+            // Cannons dynamically retarget and fire volleys destroying front walls, towers & doors!
+            // Negative yaw turns toward +Z (left wall / SW tower); positive yaw turns toward -Z (right wall / NW tower)
+            // Step 0: Left & Right cannons fire at front curtain walls
+            if (cannonSiegeStep == 0 && cannonSiegeTimer >= 0.4f) {
+                cannonSiegeStep = 1;
+                if (fireLeft.crew && !fireLeft.crew->IsDead() && fireLeft.crew->health > 0.0f) {
+                    leftCannon.SetYaw(-19.5f); leftCannon.SetElevation(12.5f); leftCannon.Fire();
+                    particleSystem.EmitSmoke(leftCannon.GetMuzzleWorldPosition(), leftCannon.GetForwardWorldDirection(), 22);
+                    projectiles.emplace_back(leftCannon.GetMuzzleWorldPosition(), leftCannon.GetForwardWorldDirection() * Projectile::DefaultSpeed, Projectile::DefaultRadius);
+                }
+                if (fireRight.crew && !fireRight.crew->IsDead() && fireRight.crew->health > 0.0f) {
+                    rightCannon.SetYaw(+19.5f); rightCannon.SetElevation(12.5f); rightCannon.Fire();
+                    particleSystem.EmitSmoke(rightCannon.GetMuzzleWorldPosition(), rightCannon.GetForwardWorldDirection(), 22);
+                    projectiles.emplace_back(rightCannon.GetMuzzleWorldPosition(), rightCannon.GetForwardWorldDirection() * Projectile::DefaultSpeed, Projectile::DefaultRadius);
+                }
+            }
+            // Step 1: Centre cannon fires at wooden gate doors
+            else if (cannonSiegeStep == 1 && cannonSiegeTimer >= 1.8f) {
+                cannonSiegeStep = 2;
+                if (fireCentre.crew && !fireCentre.crew->IsDead() && fireCentre.crew->health > 0.0f) {
+                    centreCannon.SetYaw(0.0f); centreCannon.SetElevation(11.5f); centreCannon.Fire();
+                    particleSystem.EmitSmoke(centreCannon.GetMuzzleWorldPosition(), centreCannon.GetForwardWorldDirection(), 22);
+                    projectiles.emplace_back(centreCannon.GetMuzzleWorldPosition(), centreCannon.GetForwardWorldDirection() * Projectile::DefaultSpeed, Projectile::DefaultRadius);
+                }
+            }
+            // Step 2: Second volley demolishes front walls! Rubble flies!
+            else if (cannonSiegeStep == 2 && cannonSiegeTimer >= 3.4f) {
+                cannonSiegeStep = 3;
+                if (fireLeft.crew && !fireLeft.crew->IsDead() && fireLeft.crew->health > 0.0f) {
+                    leftCannon.Fire();
+                    particleSystem.EmitSmoke(leftCannon.GetMuzzleWorldPosition(), leftCannon.GetForwardWorldDirection(), 22);
+                    projectiles.emplace_back(leftCannon.GetMuzzleWorldPosition(), leftCannon.GetForwardWorldDirection() * Projectile::DefaultSpeed, Projectile::DefaultRadius);
+                }
+                if (fireRight.crew && !fireRight.crew->IsDead() && fireRight.crew->health > 0.0f) {
+                    rightCannon.Fire();
+                    particleSystem.EmitSmoke(rightCannon.GetMuzzleWorldPosition(), rightCannon.GetForwardWorldDirection(), 22);
+                    projectiles.emplace_back(rightCannon.GetMuzzleWorldPosition(), rightCannon.GetForwardWorldDirection() * Projectile::DefaultSpeed, Projectile::DefaultRadius);
+                }
+                particleSystem.EmitDebris(vec3(0.0f, 2.0f, +7.875f), 45);
+                particleSystem.EmitDebris(vec3(0.0f, 2.0f, -7.875f), 45);
+                // Front wall sentries die on collapse
+                wallSoldierAlive[0] = false; wallSoldiers[0].SetDead();
+                wallSoldierAlive[1] = false; wallSoldiers[1].SetDead();
+            }
+            // Step 3: Cannons sweep barrels to retarget towers & doors!
+            else if (cannonSiegeStep == 3 && cannonSiegeTimer >= 5.0f) {
+                cannonSiegeStep = 4;
+                // Left cannon turns to Front SW Corner Tower!
+                leftCannon.SetYaw(-32.0f); leftCannon.SetElevation(14.5f);
+                // Right cannon turns to Front NW Corner Tower!
+                rightCannon.SetYaw(+32.0f); rightCannon.SetElevation(14.5f);
+                // Centre cannon fires second shot, shattering the doors!
+                if (fireCentre.crew && !fireCentre.crew->IsDead() && fireCentre.crew->health > 0.0f) {
+                    centreCannon.Fire();
+                    particleSystem.EmitSmoke(centreCannon.GetMuzzleWorldPosition(), centreCannon.GetForwardWorldDirection(), 25);
+                    projectiles.emplace_back(centreCannon.GetMuzzleWorldPosition(), centreCannon.GetForwardWorldDirection() * Projectile::DefaultSpeed, Projectile::DefaultRadius);
+                    castle.CheckHit(vec3(0.5f, 1.5f, 0.0f), 2.5f);
+                    particleSystem.EmitDebris(vec3(0.5f, 1.5f, 0.0f), 40);
+                }
+            }
+            // Step 4: Cannons fire at corner towers! Towers collapse!
+            else if (cannonSiegeStep == 4 && cannonSiegeTimer >= 6.8f) {
+                cannonSiegeStep = 5;
+                if (fireLeft.crew && !fireLeft.crew->IsDead() && fireLeft.crew->health > 0.0f) {
+                    leftCannon.Fire();
+                    particleSystem.EmitSmoke(leftCannon.GetMuzzleWorldPosition(), leftCannon.GetForwardWorldDirection(), 25);
+                    projectiles.emplace_back(leftCannon.GetMuzzleWorldPosition(), leftCannon.GetForwardWorldDirection() * Projectile::DefaultSpeed, Projectile::DefaultRadius);
+                    castle.CheckHit(vec3(0.0f, 6.0f, +12.0f), 3.0f);
+                    particleSystem.EmitDebris(vec3(0.0f, 6.0f, +12.0f), 50);
+                    archerAlive[2] = false; archers[2].SetPosition(vec3(0, -100, 0));
+                }
+                if (fireRight.crew && !fireRight.crew->IsDead() && fireRight.crew->health > 0.0f) {
+                    rightCannon.Fire();
+                    particleSystem.EmitSmoke(rightCannon.GetMuzzleWorldPosition(), rightCannon.GetForwardWorldDirection(), 25);
+                    projectiles.emplace_back(rightCannon.GetMuzzleWorldPosition(), rightCannon.GetForwardWorldDirection() * Projectile::DefaultSpeed, Projectile::DefaultRadius);
+                    castle.CheckHit(vec3(0.0f, 6.0f, -12.0f), 3.0f);
+                    particleSystem.EmitDebris(vec3(0.0f, 6.0f, -12.0f), 50);
+                    archerAlive[0] = false; archers[0].SetPosition(vec3(0, -100, 0));
+                }
+            }
+            // Step 5: Final volley clears remaining gatehouse towers
+            else if (cannonSiegeStep == 5 && cannonSiegeTimer >= 8.5f) {
+                cannonSiegeStep = 6;
+                castle.CheckHit(vec3(0.0f, 5.0f, -3.75f), 3.0f);
+                castle.CheckHit(vec3(0.0f, 5.0f, +3.75f), 3.0f);
+                particleSystem.EmitDebris(vec3(0.0f, 5.0f, -3.75f), 40);
+                particleSystem.EmitDebris(vec3(0.0f, 5.0f, +3.75f), 40);
+                archerAlive[4] = false; archerAlive[5] = false;
+                archers[4].SetPosition(vec3(0, -100, 0));
+                archers[5].SetPosition(vec3(0, -100, 0));
+            }
+
+            if (cannonSiegeTimer >= 11.2f) {
+                battle = BattlePhase::Charge;
+                battleTimer = 0.0f;
                 armyMarchStarted = true;
                 leadMarchDistance = 0.0f;
                 armyMarchOrder.clear();
                 for (size_t si = 0; si < army.size(); si++) {
-                    if (armyAlive[si]) {
-                        armyMarchOrder.push_back((int)si);
-                    }
+                    if (armyAlive[si]) armyMarchOrder.push_back((int)si);
                 }
             }
+        } else if (battle == BattlePhase::Charge) {
+            castle.SetBridgeRaised(false);
+            // Cannons STAY stationary at battery line (x = -15m); ONLY soldiers move inside!
+            leadMarchDistance += 3.4f * dt;
+            float desiredLeadX = -15.0f + leadMarchDistance;
 
-            if (armyMarchStarted) {
-                leadMarchDistance += kArmyMarchSpeed * dt;
-                float desiredLeadX = -15.0f + leadMarchDistance;
+            for (size_t r = 0; r < armyMarchOrder.size(); r++) {
+                int si = armyMarchOrder[r];
+                if (!armyAlive[si]) continue;
+                int file = int(r % 2); // strictly 2 lines across bridge
+                int pair = int(r / 2);
+                float targetZ = (file == 0) ? -0.85f : +0.85f;
+                float desiredX = desiredLeadX - float(pair) * 2.2f;
+                desiredX = std::max(armyBattlePos[si].x, std::min(desiredX, 7.5f));
 
-                for (size_t r = 0; r < armyMarchOrder.size(); r++) {
-                    int si = armyMarchOrder[r];
-                    if (!armyAlive[si]) continue;
-                    int file = int(r % 2);       // 0 = left file, 1 = right file
-                    int pair = int(r / 2);       // 0, 1, 2, ...
-                    float targetZ = (file == 0) ? -0.85f : +0.85f;
-
-                    float desiredX = desiredLeadX - float(pair) * 2.2f;
-                    desiredX = std::max(armyOriginalPos[si].x, std::min(desiredX, 7.0f));
-
-                    // Funnel into bridge, then strictly two lines on bridge!
-                    float currentZ = targetZ;
-                    if (desiredX < -11.5f) {
-                        float tZ = (desiredX - armyOriginalPos[si].x) / (-11.5f - armyOriginalPos[si].x);
-                        tZ = glm::clamp(tZ, 0.0f, 1.0f);
-                        currentZ = glm::mix(armyOriginalPos[si].z, targetZ, tZ);
-                    } else if (desiredX > 2.0f) {
-                        float fanOut = (desiredX - 2.0f) / 5.0f;
-                        currentZ = targetZ * (1.0f + fanOut * 0.8f);
-                    }
-
-                    army[si].SetPosition(vec3(desiredX, 0.0f, currentZ));
-                    army[si].SetYaw(0.0f);
+                float currentZ = targetZ;
+                if (desiredX < -11.5f) {
+                    float tZ = (desiredX - armyBattlePos[si].x) / (-11.5f - armyBattlePos[si].x);
+                    tZ = glm::clamp(tZ, 0.0f, 1.0f);
+                    currentZ = glm::mix(armyBattlePos[si].z, targetZ, tZ);
+                } else if (desiredX > 2.0f) {
+                    float fanOut = (desiredX - 2.0f) / 5.0f;
+                    currentZ = targetZ * (1.0f + fanOut * 0.8f);
                 }
 
-                if (desiredLeadX >= 5.5f) {
-                    battle = BattlePhase::Melee;
-                    battleTimer = 0.0f;
-                    meleeTimer = 0.0f;
-                    meleeHitTimer = 0.0f;
+                army[si].SetPosition(vec3(desiredX, 0.0f, currentZ));
+                army[si].SetMarching(true);
+                army[si].SetShieldRaised(true);
+                army[si].SetYaw(0.0f);
+            }
+
+            if (desiredLeadX >= 6.0f) {
+                battle = BattlePhase::Melee;
+                battleTimer = 0.0f;
+                meleeTimer = 0.0f;
+                meleeHitTimer = 0.0f;
+                for (Soldier& s : army) {
+                    s.SetMarching(false);
+                    s.SetShieldRaised(false);
                 }
             }
         } else if (battle == BattlePhase::Melee) {
             meleeTimer += dt;
 
-            // Defenders (blue) charge forward from crest toward attackers
+            // Defenders charge out to meet attackers
             for (size_t di = 0; di < defenders.size(); di++) {
                 if (!defenderAlive[di]) continue;
                 vec3 cur = defenders[di].GetPosition();
@@ -524,141 +889,114 @@ int main() {
                     defenders[di].SetYaw(180.0f);
                 }
             }
-
-            // Attackers advance to meet defenders
+            // Attackers advance
             for (size_t si = 0; si < army.size(); si++) {
                 if (!armyAlive[si]) continue;
                 vec3 cur = army[si].GetPosition();
-                if (cur.x < 6.5f) {
-                    cur.x += 2.2f * dt;
+                if (cur.x < 6.8f) {
+                    cur.x += 2.0f * dt;
                     army[si].SetPosition(cur);
                     army[si].SetYaw(0.0f);
                 }
             }
 
-            // Sword strike lunges!
+            // Dynamic sword strike lunges
             for (size_t si = 0; si < army.size(); si++) {
                 if (armyAlive[si]) {
-                    army[si].SetAttackOffset(std::sin(meleeTimer * 12.0f + float(si)) * 0.22f);
-                } else {
-                    army[si].SetAttackOffset(0.0f);
-                }
+                    army[si].SetAttackOffset(std::sin(meleeTimer * 14.0f + float(si)) * 0.25f);
+                } else army[si].SetAttackOffset(0.0f);
             }
             for (size_t di = 0; di < defenders.size(); di++) {
                 if (defenderAlive[di]) {
-                    defenders[di].SetAttackOffset(-std::sin(meleeTimer * 12.0f + float(di) * 1.5f) * 0.22f);
-                } else {
-                    defenders[di].SetAttackOffset(0.0f);
-                }
+                    defenders[di].SetAttackOffset(-std::sin(meleeTimer * 14.0f + float(di) * 1.5f) * 0.25f);
+                } else defenders[di].SetAttackOffset(0.0f);
             }
 
-            // Periodic melee combat damage: soldiers fight and DIE!
+            // Combat clashes & sparks
             meleeHitTimer += dt;
-            if (meleeHitTimer >= 0.85f) {
+            if (meleeHitTimer >= 0.75f) {
                 meleeHitTimer = 0.0f;
-                int livingAttacker = -1;
-                for (size_t si = 0; si < army.size(); si++) {
-                    if (armyAlive[si]) { livingAttacker = (int)si; break; }
-                }
-                int livingDefender = -1;
-                for (size_t di = 0; di < defenders.size(); di++) {
-                    if (defenderAlive[di]) { livingDefender = (int)di; break; }
-                }
-
-                if (livingAttacker >= 0 && livingDefender >= 0) {
-                    defenders[livingDefender].TakeDamage(35.0f);
-                    if (defenders[livingDefender].IsDead()) {
-                        defenderAlive[livingDefender] = false;
-                        defenders[livingDefender].SetDead();
-                    }
-                    for (size_t si = livingAttacker; si < army.size(); si++) {
-                        if (armyAlive[si]) {
-                            army[si].TakeDamage(40.0f);
-                            if (army[si].IsDead()) {
-                                armyAlive[si] = false;
-                                army[si].SetDead();
-                            }
-                            break;
-                        }
-                    }
-                }
+                particleSystem.EmitSparks(vec3(7.0f, 1.2f, 0.0f), vec3(0, 1, 0), 10);
             }
 
-            int livingDefenders = 0;
-            for (bool d : defenderAlive) if (d) ++livingDefenders;
-            int livingAttackers = 0;
-            for (bool a : armyAlive) if (a) ++livingAttackers;
-
-            if (livingDefenders <= 0 || livingAttackers <= 0 || meleeTimer > 8.0f) {
+            if (meleeTimer >= 6.0f) {
                 battle = BattlePhase::End;
                 battleTimer = 0.0f;
-                bool attackersWin = (livingAttackers > 0);
-                goldCrest.SetVictorious(attackersWin);
                 for (Soldier& s : army) s.SetAttackOffset(0.0f);
                 for (Soldier& d : defenders) d.SetAttackOffset(0.0f);
+
+                // Decide random winner: 0 = Attackers, 1 = Defenders
+                if (winnerOutcome == -1) {
+                    winnerOutcome = rand() % 2;
+                }
+                if (winnerOutcome == 0) {
+                    for (size_t di = 0; di < defenders.size(); di++) {
+                        defenderAlive[di] = false;
+                        defenders[di].SetDead();
+                    }
+                    goldCrest.SetVictorious(true);
+                } else {
+                    for (size_t si = 0; si < army.size(); si++) {
+                        if (si % 2 == 0) {
+                            armyAlive[si] = false;
+                            army[si].SetDead();
+                        }
+                    }
+                    goldCrest.SetVictorious(false);
+                }
             }
         } else if (battle == BattlePhase::End) {
-            // Surviving attackers advance to surround the gold crest
-            for (size_t si = 0; si < army.size(); si++) {
-                if (!armyAlive[si]) continue;
-                vec3 cur = army[si].GetPosition();
-                if (cur.x < 14.5f) {
-                    cur.x += 1.5f * dt;
-                    army[si].SetPosition(cur);
+            if (winnerOutcome == 0) {
+                for (size_t si = 0; si < army.size(); si++) {
+                    if (!armyAlive[si]) continue;
+                    vec3 cur = army[si].GetPosition();
+                    if (cur.x < 14.5f) {
+                        cur.x += 1.8f * dt;
+                        army[si].SetPosition(cur);
+                    }
+                }
+            } else {
+                for (size_t di = 0; di < defenders.size(); di++) {
+                    if (defenderAlive[di]) defenders[di].SetYaw(180.0f);
                 }
             }
             if (battleTimer > 6.0f) battleFinished = true;
         }
 
-        // ---- Archers shoot arrows ----
-        if (battle == BattlePhase::Defending || battle == BattlePhase::Advance) {
-            archerFireTimer += dt;
-            if (archerFireTimer >= kArcherFirePeriod) {
-                archerFireTimer = 0.0f;
-                for (size_t ai = 0; ai < archers.size(); ai++) {
-                    if (!archerAlive[ai]) continue;
-                    int bestIdx = -1; float bestD2 = 1e9f;
-                    vec3 archerPos = archers[ai].GetPosition();
-                    for (size_t si = 0; si < army.size(); si++) {
-                        if (!armyAlive[si]) continue;
-                        vec3 sp = army[si].GetPosition();
-                        float d2 = glm::dot(sp - archerPos, sp - archerPos);
-                        if (d2 < bestD2) { bestD2 = d2; bestIdx = (int)si; }
-                    }
-                    if (bestIdx < 0) continue;
-                    vec3 target = army[bestIdx].GetPosition();
-                    vec3 origin = archerPos + vec3(0.0f, 1.5f, 0.0f);
-                    vec3 toT = target - origin;
-                    float horiz = length(vec2(toT.x, toT.z));
-                    float vy = 5.0f, vh = 16.0f;
-                    vec3 vhVec = (horiz > 1e-3f)
-                        ? vec3(toT.x, 0.0f, toT.z) / horiz * vh
-                        : vec3(0.0f, 0.0f, 0.0f);
-                    arrows.emplace_back(origin, vhVec + vec3(0.0f, vy, 0.0f));
-                }
-            }
-        }
-        // ---- Arrow + soldier hit detection (soldiers survive 2 hits, die on 3rd) ----
+        // ---- Update arrows + check shield blocks / soldier hits ----
         for (Arrow& a : arrows) {
             a.Update(dt);
             if (a.IsDead()) continue;
             vec3 ap = a.GetPosition();
+
+            // Check cannoneer hit during Barrage
+            if (battle == BattlePhase::Barrage && !cannoneerHit) {
+                vec3 cp = crewCentre.GetPosition() + vec3(0.0f, 1.2f, 0.0f);
+                if (glm::distance(ap, cp) < 0.9f) {
+                    cannoneerHit = true;
+                    crewCentre.SetDead();
+                    particleSystem.EmitSparks(cp, vec3(0, 1, 0), 20);
+                    a.Kill();
+                    continue;
+                }
+            }
+
+            // Check army soldiers
             for (size_t si = 0; si < army.size(); si++) {
                 if (!armyAlive[si]) continue;
-                vec3 sp = army[si].GetPosition();
-                vec3 d = ap - sp;
-                vec3 clamped(
-                    std::fmax(-0.25f, std::fmin(d.x, 0.25f)),
-                    std::fmax(-1.20f, std::fmin(d.y, 1.20f)),
-                    std::fmax(-0.20f, std::fmin(d.z, 0.20f)));
-                vec3 delta = d - clamped;
-                if (glm::dot(delta, delta) <= 0.05f * 0.05f) {
-                    army[si].TakeDamage(35.0f);
-                    if (army[si].IsDead()) {
-                        armyAlive[si] = false;
-                        army[si].SetDead();
+                vec3 sp = army[si].GetPosition() + vec3(0.0f, 1.2f, 0.0f);
+                if (glm::distance(ap, sp) < 0.85f) {
+                    if (army[si].IsShieldRaised()) {
+                        particleSystem.EmitSparks(ap, vec3(0, 1, 0), 8);
+                        a.Kill();
+                    } else {
+                        army[si].TakeDamage(50.0f);
+                        if (army[si].IsDead()) {
+                            armyAlive[si] = false;
+                            army[si].SetDead();
+                        }
+                        a.Kill();
                     }
-                    a.Kill();
                     break;
                 }
             }
@@ -671,11 +1009,11 @@ int main() {
         // Update 2: If front wall segment breaks, front wall soldiers die
         if (!castle.IsFrontWallPieceAlive(0)) {
             wallSoldierAlive[0] = false;
-            wallSoldierAlive[1] = false;
+            wallSoldiers[0].SetDead();
         }
         if (!castle.IsFrontWallPieceAlive(1)) {
-            wallSoldierAlive[2] = false;
-            wallSoldierAlive[3] = false;
+            wallSoldierAlive[1] = false;
+            wallSoldiers[1].SetDead();
         }
 
         // Update 3: If a tower breaks, the tower archer dies
@@ -719,6 +1057,13 @@ int main() {
             : normalize(vec3(0.6f, -0.2f, -0.4f));
         glUniform3fv(lightDirLoc, 1, value_ptr(lightDir));
 
+        float cy = std::cos(camYaw),  sy = std::sin(camYaw);
+        float cp = std::cos(camPitch), sp = std::sin(camPitch);
+        vec3 dir = vec3(cp * cy, -sp, cp * sy);
+        vec3 eye = camTarget - dir * camRadius;
+        if (viewPosLoc != -1) glUniform3fv(viewPosLoc, 1, value_ptr(eye));
+        if (ambStrLoc != -1) glUniform1f(ambStrLoc, 0.35f);
+
         // Draw Sun and radiant rays
         GLint isSunLoc = glGetUniformLocation(shaderProgram.ID, "isSun");
         if (isSunLoc != -1) glUniform1i(isSunLoc, 1);
@@ -749,6 +1094,7 @@ int main() {
         for (SignalTower& t : signalTowers) t.Draw(shaderProgram);
         skyClouds.Draw(shaderProgram);
         castle.Draw(shaderProgram);
+        ladder.Draw(shaderProgram);
         robot.Draw(shaderProgram);
         for (size_t i = 0; i < archers.size(); i++)
             if (archerAlive[i]) archers[i].Draw(shaderProgram);
@@ -770,6 +1116,10 @@ int main() {
         for (Projectile& ball : projectiles) ball.Draw(shaderProgram);
         for (Arrow& a : arrows) a.Draw(shaderProgram);
         birds.Draw(shaderProgram);
+
+        // Dynamic FX: Smoke, sparks, debris
+        particleSystem.Update(dt);
+        particleSystem.Draw(shaderProgram, view, projMatrix);
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -820,6 +1170,8 @@ int main() {
     sunCore.Delete();
     sunCorona.Delete();
     for (Mesh& m : sunRays) m.Delete();
+    ladder.Delete();
+    particleSystem.Delete();
     shaderProgram.Delete();
 
     glfwDestroyWindow(window);

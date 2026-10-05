@@ -49,7 +49,7 @@ public:
     // Tuned so that a 12-degree shot from a stationary cannon (muzzle at
     // ~(1.8, 1.5, 0)) lands near the wall (centre at x = 12) at about chest
     // height for the dummy robot (~1.0 m).
-    static constexpr float DefaultSpeed    = 14.0f;
+    static constexpr float DefaultSpeed    = 19.5f;
     static constexpr float Gravity         = 9.81f;
 
 private:

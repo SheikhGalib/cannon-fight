@@ -25,8 +25,12 @@ public:
     void SetPosition(glm::vec3 baseWorld);
     glm::vec3 GetPosition() const { return glm::vec3(transform[3]); }
 
-    // Phase 7: rotate the whole archer around Y (used to face the camera).
+    // Phase 7: rotate the whole archer around Y (used to face the camera or battlefield).
     void SetYaw(float degrees) { yawDegrees = degrees; }
+    float GetYaw() const { return yawDegrees; }
+
+    void TriggerShootAnim() { shootAnim = 0.6f; }
+    void Update(float dt);
 
     void Draw(Shader& shader);
     void Delete();
@@ -35,6 +39,7 @@ private:
     std::vector<Part> parts;
     glm::mat4 transform;
     float yawDegrees = 0.0f;     // extra rotation around Y, applied in Draw
+    float shootAnim = 0.0f;
 };
 
 #endif

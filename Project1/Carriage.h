@@ -34,6 +34,10 @@ public:
     // Moves the whole gun along +X (forward) / -X (back).
     void MoveForward(float distance);
 
+    // Sets the world-space position directly.
+    void SetPosition(glm::vec3 pos) { transform.position = pos; }
+    glm::vec3 GetPosition() const { return transform.position; }
+
     // Phase 7: arbitrary horizontal (X/Z) translation. Used by Cannon
     // to drive along the cannon's yawed forward direction rather than
     // strict world +X.

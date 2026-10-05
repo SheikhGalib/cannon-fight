@@ -9,6 +9,7 @@
 
 enum class ParticleType {
     Smoke,
+    RedSmoke,
     Spark,
     Debris
 };
@@ -30,6 +31,7 @@ public:
 
     void Init();
     void EmitSmoke(glm::vec3 origin, glm::vec3 direction, int count = 20);
+    void EmitRedSmoke(glm::vec3 origin, int count = 25);
     void EmitSparks(glm::vec3 origin, glm::vec3 direction, int count = 30);
     void EmitDebris(glm::vec3 origin, int count = 35);
 

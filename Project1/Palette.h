@@ -35,8 +35,8 @@ namespace Palette {
     inline const glm::vec3 StoneDark (0.18f, 0.16f, 0.14f);  // destination colour for damaged bricks
 
     // Phase 8: combat / scenery colours.
-    inline const glm::vec3 Attacker  (0.42f, 0.20f, 0.18f);  // dark red attacker uniform
-    inline const glm::vec3 Defender  (0.18f, 0.30f, 0.45f);  // dark blue defender uniform
+    inline const glm::vec3 Attacker  (0.82f, 0.12f, 0.12f);  // vibrant heraldic crimson red
+    inline const glm::vec3 Defender  (0.12f, 0.38f, 0.88f);  // vibrant royal blue defender uniform
     inline const glm::vec3 TentCloth (0.60f, 0.40f, 0.20f);  // canvas tent cloth
     inline const glm::vec3 TentBase  (0.35f, 0.22f, 0.12f);  // wooden tent platform
     inline const glm::vec3 Gold      (0.95f, 0.78f, 0.18f);  // gold crest / treasure

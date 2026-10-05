@@ -12,6 +12,8 @@ uniform mat4 model;
 uniform mat4 view;
 uniform mat4 proj;
 uniform mat4 lightSpaceMatrix;
+uniform vec3 colorOverride;
+uniform bool useColorOverride;
 
 void main()
 {
@@ -20,6 +22,6 @@ void main()
     gl_Position = proj * view * worldPos;
 
     fragNormal = mat3(model) * aNormal;
-    fragColor = aColor;
+    fragColor = useColorOverride ? colorOverride : aColor;
     fragPosLightSpace = lightSpaceMatrix * worldPos;
 }

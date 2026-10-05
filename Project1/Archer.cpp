@@ -134,11 +134,26 @@ void Archer::SetPosition(glm::vec3 baseWorld) {
     transform = glm::translate(glm::mat4(1.0f), baseWorld);
 }
 
+void Archer::Update(float dt) {
+    if (shootAnim > 0.0f) {
+        shootAnim = std::max(0.0f, shootAnim - dt);
+    }
+}
+
 void Archer::Draw(Shader& shader) {
-    glm::mat4 m = (yawDegrees == 0.0f) ? transform
-                                        : glm::rotate(transform,
-                                                      glm::radians(yawDegrees),
-                                                      glm::vec3(0.0f, 1.0f, 0.0f));
+    // Base rotation +90 deg around Y: aligns model's forward (+Z) with world +X
+    // When yawDegrees = 180, (180+90)=270 deg, archer faces world -X (towards the cannons)
+    glm::mat4 m = glm::rotate(transform,
+                              glm::radians(yawDegrees + 90.0f),
+                              glm::vec3(0.0f, 1.0f, 0.0f));
+
+    if (shootAnim > 0.0f) {
+        // Dynamic bow drawing and release animation: slight forward lean and bow raise
+        float t = shootAnim / 0.6f;
+        float pull = std::sin(t * 3.14159f);
+        m = glm::rotate(m, glm::radians(pull * 12.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    }
+
     DrawParts(shader, m, parts);
 }
 

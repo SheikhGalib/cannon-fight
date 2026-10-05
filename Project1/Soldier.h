@@ -51,15 +51,29 @@ public:
     bool IsDead() const { return health <= 0.0f; }
     void SetDead() { health = 0.0f; pitchDegrees = -90.0f; }
 
+    // Phase 9+: Shield raising animation to guard against incoming arrows
+    void SetShieldRaised(bool raised) { shieldRaised = raised; }
+    bool IsShieldRaised() const { return shieldRaised; }
+
+    void SetMarching(bool m) { isMarching = m; }
+    bool IsMarching() const { return isMarching; }
+
+    void Update(float dt);
+
     void Draw(Shader& shader);
     void Delete();
 
 private:
     std::vector<Part> parts;
+    std::vector<Part> shieldParts;
     glm::mat4 transform;
     float yawDegrees = 0.0f;
     float pitchDegrees = 0.0f;
     float attackOffset = 0.0f;
+    bool  shieldRaised = false;
+    float shieldRaiseAmount = 0.0f;
+    bool  isMarching = false;
+    float marchPhase = 0.0f;
 };
 
 #endif

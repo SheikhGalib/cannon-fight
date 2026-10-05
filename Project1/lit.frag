@@ -141,7 +141,7 @@ void main()
     // =========================================================================
     // 2. Hemispheric Ambient Light (Sky / Ground bounce)
     // =========================================================================
-    float ambStrength = (ambientStrength > 0.0) ? ambientStrength : (isNight ? 0.18 : 0.32);
+    float ambStrength = (ambientStrength > 0.0) ? ambientStrength : (isNight ? 0.12 : 0.22);
     vec3 skyColor    = isNight ? vec3(0.05, 0.07, 0.14) : vec3(0.40, 0.52, 0.68);
     vec3 groundColor = isNight ? vec3(0.02, 0.02, 0.04) : vec3(0.24, 0.20, 0.15);
     float hemiFactor = normal.y * 0.5 + 0.5;
@@ -204,18 +204,20 @@ void main()
     vec3 finalColor = ambient + directLit + pointLightsTotal;
 
     // =========================================================================
-    // 6. Atmospheric Distance Fog
+    // 6. Atmospheric Distance Fog (Starts only on distant scenery > 65m)
     // =========================================================================
     float dist = length(viewPos - fragPos);
-    float fogDensity = isNight ? 0.0042 : 0.0026;
-    float fogFactor = 1.0 - exp(-pow(dist * fogDensity, 1.35));
-    fogFactor = clamp(fogFactor, 0.0, 0.88);
-    vec3 fogColor = isNight ? vec3(0.04, 0.05, 0.12) : vec3(0.66, 0.72, 0.82);
+    float fogDist = max(0.0, dist - 65.0);
+    float fogFactor = 1.0 - exp(-pow(fogDist * (isNight ? 0.008 : 0.005), 1.35));
+    fogFactor = clamp(fogFactor, 0.0, 0.85);
+    vec3 fogColor = isNight ? vec3(0.03, 0.04, 0.10) : vec3(0.64, 0.72, 0.84);
     finalColor = mix(finalColor, fogColor, fogFactor);
 
     // =========================================================================
-    // 7. Reinhard Tone Mapping & Gamma Correction (gamma = 2.2)
+    // 7. ACES Filmic Tone Mapping (Punchy contrast & rich blacks) + Gamma 2.2
     // =========================================================================
-    vec3 mapped = finalColor / (finalColor + vec3(1.0));
+    // ACES curve: a=2.51, b=0.03, c=2.43, d=0.59, e=0.14
+    vec3 x = finalColor * 1.08;
+    vec3 mapped = clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
     FragColor = vec4(pow(mapped, vec3(1.0 / 2.2)), 1.0);
 }

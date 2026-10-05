@@ -30,3 +30,22 @@ Instead of just a wall. Make a mini disney fantasy style castle with wodden fort
   ground toops will merch with there cannons and batteleon and then when positioned the castle solders will retract the bridge and start shooting
   arrows at the ground troops. Then groundd toops will take cover with their sheild and some ground toops will attand the cannons. The cannon attending
   solders can die and they will be replaced by other ground solders untill non left. [simulation style]  
+
+That now looks awesome. But why is this a bit washed up. 
+the archers are faceing the opposite way. and the wall solder are facing saide ways. 
+the cannon shot is box smoke - make it round spreas instead and keep them a bit smaller. 
+the ground solders are still side wyas.  fix them please. point them where the cannnons are pointing. 
+# simulation script upgrade. 
+- using cannons the attacker breaks all the fronts walls, doors, towers
+- that means the cannon should move to point to the next wall when one is broken.  
+- during the defenders thworing arrows the attacking solders use sheilds. to gurd themselves. 
+- the scene should be dynamic not static. every character should dynamically move. the archers should show movement of arrow throws. 
+- the attcking toops should also show animation of raising their sheilds. 
+- some of the attaking toops shall die from arrows when they are lighting up cannons. As at that time they are not sheilded. 
+- if one cannier dies the some oather solder takes the place. 
+- they first shoot down the hinges with cannon then the bridge droops. the they shoot down wall and doors with cannons. 
+- the attacking sholders merch to the battle area. Seeing that the castle spotter starts red somke, Every body in the castle will go into battle mod. 
+- they will up the bridge and start throuing arrow. 
+- Normally the wall sholders will keep patrollling and keep moving on the wall. 
+- There will be ladder. After some time a wall solder will come down to castle for rest and another from inside castle will go up for patrolling. 
+- so, after that make the presentaion video again. it will first show the normal patrolling behaviour of the solders on the castle. then the attackers marching in, then the red signal smoke, then the bridge drwn up, then cannon fight and then eventually, capture of gold or not. Which side wins - will be random on each simulation. 

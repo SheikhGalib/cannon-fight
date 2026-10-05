@@ -12,14 +12,17 @@ uniform vec3 lightDir;
 uniform vec3 viewPos;
 uniform float ambientStrength;
 uniform bool isSun;
+uniform vec3 colorOverride;
+uniform bool useColorOverride;
 
 void main()
 {
    vec4 worldPos = model * vec4(aPos, 1.0);
    gl_Position = proj * view * worldPos;
 
+   vec3 baseCol = useColorOverride ? colorOverride : aColor;
    if (isSun) {
-       vertColor = aColor;
+       vertColor = baseCol;
        return;
    }
 
@@ -33,8 +36,8 @@ void main()
    vec3 reflectDir = reflect(-lDir, normal);
    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 16.0);
 
-   vec3 ambient = amb * aColor;
-   vec3 diffuse = (1.0 - amb) * diff * aColor;
+   vec3 ambient = amb * baseCol;
+   vec3 diffuse = (1.0 - amb) * diff * baseCol;
    vec3 specular = 0.20 * spec * vec3(1.0);
 
    vertColor = ambient + diffuse + specular;

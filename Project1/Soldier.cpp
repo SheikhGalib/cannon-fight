@@ -65,16 +65,20 @@ Soldier::Soldier(glm::vec3 baseWorld, glm::vec3 bodyColour)
         glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.315f, 0.20f))
     });
 
-    // --- 6. Torso: Steel Breastplate over Gambeson (y = 1.32 to 1.74) --------
-    // Main breastplate body
+    // --- 6. Torso: Heraldic Surcoat / Tabard over Breastplate (y = 1.32 to 1.76) ---
+    // Vibrant uniform tabard / surcoat
     parts.push_back({
-        Primitives::CreateBox(0.50f, 0.42f, 0.34f, Palette::Iron),
+        Primitives::CreateBox(0.50f, 0.44f, 0.36f, bodyColour),
         glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.53f, 0.0f))
     });
-    // Tapered chest ridge (plackart central rib)
+    // Reinforced steel breastplate center with heraldic crest
     parts.push_back({
-        Primitives::CreateBox(0.12f, 0.38f, 0.37f, Palette::Iron),
-        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.54f, 0.0f))
+        Primitives::CreateBox(0.26f, 0.30f, 0.38f, Palette::Iron),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.55f, 0.0f))
+    });
+    parts.push_back({
+        Primitives::CreateBox(0.12f, 0.12f, 0.39f, Palette::Brass),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.55f, 0.0f))
     });
 
     // --- 7. Neck: Chainmail Coif / Gorget (y = 1.70 to 1.78) -----------------
@@ -89,11 +93,16 @@ Soldier::Soldier(glm::vec3 baseWorld, glm::vec3 bodyColour)
         glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.89f, 0.0f))
     });
 
-    // --- 9. Medieval Sallet Helmet (Crown, Brow Ridge & Visor Slit) ----------
+    // --- 9. Medieval Sallet Helmet with Heraldic Plume ----------------------
     // Helmet dome crown
     parts.push_back({
         Primitives::CreateCone(0.20f, 0.12f, 0.22f, 12, Palette::Iron, /*centered=*/false),
         glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.98f, 0.0f))
+    });
+    // Heraldic crest plume atop helmet
+    parts.push_back({
+        Primitives::CreateBox(0.07f, 0.14f, 0.24f, bodyColour),
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.10f, -0.02f))
     });
     // Helmet brow ridge / flared brim
     parts.push_back({
@@ -146,17 +155,17 @@ Soldier::Soldier(glm::vec3 baseWorld, glm::vec3 bodyColour)
     const float shieldX = -armX - 0.10f;
     const float shieldY = 1.34f;
     // Wooden shield face in uniform heraldic color
-    parts.push_back({
+    shieldParts.push_back({
         Primitives::CreateBox(0.05f, 0.65f, 0.44f, bodyColour),
         glm::translate(glm::mat4(1.0f), glm::vec3(shieldX, shieldY, 0.08f))
     });
     // Dark iron rim border
-    parts.push_back({
+    shieldParts.push_back({
         Primitives::CreateBox(0.06f, 0.68f, 0.46f, Palette::DarkIron),
         glm::translate(glm::mat4(1.0f), glm::vec3(shieldX - 0.005f, shieldY, 0.08f))
     });
     // Golden central shield boss (reinforcing dome)
-    parts.push_back({
+    shieldParts.push_back({
         Primitives::CreateSphere(0.11f, 10, 10, Palette::Brass),
         glm::translate(glm::mat4(1.0f), glm::vec3(shieldX - 0.035f, shieldY, 0.08f))
     });
@@ -190,18 +199,36 @@ void Soldier::SetPosition(glm::vec3 baseWorld) {
     transform = glm::translate(glm::mat4(1.0f), baseWorld);
 }
 
+void Soldier::Update(float dt) {
+    float targetShield = shieldRaised ? 1.0f : 0.0f;
+    if (shieldRaiseAmount < targetShield) {
+        shieldRaiseAmount = std::min(targetShield, shieldRaiseAmount + dt * 3.8f);
+    } else if (shieldRaiseAmount > targetShield) {
+        shieldRaiseAmount = std::max(targetShield, shieldRaiseAmount - dt * 3.8f);
+    }
+
+    if (isMarching) {
+        marchPhase += dt * 8.0f;
+    }
+}
+
 void Soldier::Draw(Shader& shader) {
     glm::mat4 m = transform;
+
+    // Base rotation +90 deg around Y: aligns model's forward (+Z) with world +X (where cannons point)
+    m = glm::rotate(m, glm::radians(yawDegrees + 90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+
     if (attackOffset != 0.0f) {
-        float rad = glm::radians(yawDegrees);
-        m = glm::translate(m, glm::vec3(std::cos(rad) * attackOffset, 0.0f, std::sin(rad) * attackOffset));
+        // Forward lunge along soldier's facing direction (local +Z)
+        m = glm::translate(m, glm::vec3(0.0f, 0.0f, attackOffset));
     }
     if (pitchDegrees != 0.0f) {
-        // Casualties pivot flat to the ground (pitch = -90 deg)
-        m = glm::rotate(m, glm::radians(pitchDegrees), glm::vec3(0.0f, 0.0f, 1.0f));
+        // Casualties fall backwards flat to the ground (pitch = -90 deg)
+        m = glm::rotate(m, glm::radians(pitchDegrees), glm::vec3(1.0f, 0.0f, 0.0f));
     }
-    if (yawDegrees != 0.0f) {
-        m = glm::rotate(m, glm::radians(yawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
+    if (isMarching && pitchDegrees == 0.0f) {
+        // Subtle marching step bob
+        m = glm::translate(m, glm::vec3(0.0f, std::abs(std::sin(marchPhase)) * 0.04f, 0.0f));
     }
 
     GLuint modelLoc = glGetUniformLocation(shader.ID, "model");
@@ -210,8 +237,23 @@ void Soldier::Draw(Shader& shader) {
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(partM));
         p.mesh.Draw();
     }
+
+    // Dynamic shield raising: when guarding against arrows, shield lifts in front of chest/head
+    glm::mat4 shieldAnim = glm::mat4(1.0f);
+    if (shieldRaiseAmount > 0.001f) {
+        shieldAnim = glm::translate(shieldAnim, glm::vec3(0.24f * shieldRaiseAmount,
+                                                          0.22f * shieldRaiseAmount,
+                                                          0.28f * shieldRaiseAmount));
+        shieldAnim = glm::rotate(shieldAnim, glm::radians(25.0f * shieldRaiseAmount), glm::vec3(1.0f, 0.0f, 0.0f));
+    }
+    for (Part& p : shieldParts) {
+        glm::mat4 partM = m * shieldAnim * p.local;
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(partM));
+        p.mesh.Draw();
+    }
 }
 
 void Soldier::Delete() {
     for (Part& p : parts) p.mesh.Delete();
+    for (Part& p : shieldParts) p.mesh.Delete();
 }

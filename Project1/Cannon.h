@@ -54,6 +54,17 @@ public:
     float GetElevationDegrees() const { return shaft.GetElevationDegrees(); }
     float GetYawDegrees()      const { return yawDeg; }
 
+    void SetElevation(float targetDeg) { shaft.Elevate(targetDeg - shaft.GetElevationDegrees()); }
+    void SetYaw(float targetDeg)       { yawDeg = glm::clamp(targetDeg, -MaxYawDeg, MaxYawDeg); }
+
+    void SetPosition(glm::vec3 pos) {
+        float dist = glm::length(pos - carriage.GetPosition());
+        carriage.SetPosition(pos);
+        leftWheel.Roll(dist);
+        rightWheel.Roll(dist);
+    }
+    glm::vec3 GetPosition() const { return carriage.GetPosition(); }
+
 private:
     // Build the matrix that turns a carriage-local point into world
     // space, accounting for the cannon's yaw around its own centre.
