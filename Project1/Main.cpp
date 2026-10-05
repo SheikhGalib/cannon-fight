@@ -18,7 +18,7 @@
 #include "Projectile.h"
 #include "Wall.h"
 #include "FortGate.h"
-#include "Castle.h"
+#include "CompoundCastle.h"
 #include "Tower.h"
 #include "Door.h"
 #include "Tree.h"
@@ -30,6 +30,24 @@ using namespace glm;
 const unsigned int width = 1000;
 const unsigned int height = 700;
 
+// Four camera presets.  Press 1/2/3/4 to switch.
+//   1: behind the cannons (default) - looking down the barrels at the gate
+//   2: in front of the castle     - looking back at the cannons across the moat
+//   3: side view                  - looking sideways at the whole compound
+//   4: top-down                   - looking straight down at the scene
+struct CameraPreset {
+    vec3 eye;
+    vec3 target;
+    const char* label;
+};
+
+static const CameraPreset kPresets[4] = {
+    { vec3(-18.0f,  5.5f,  8.0f), vec3( 12.0f, 2.5f,  0.0f), "Behind cannons" },
+    { vec3( 32.0f,  9.0f, 22.0f), vec3(-18.0f, 2.5f,  0.0f), "Front of castle" },
+    { vec3( 12.0f,  8.0f, 32.0f), vec3( 12.0f, 1.0f,  0.0f), "Side view" },
+    { vec3( 12.0f, 55.0f,  0.5f), vec3( 12.0f, 0.0f,  0.0f), "Top-down" },
+};
+
 int main() {
 	glfwInit();
 
@@ -37,7 +55,7 @@ int main() {
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-	GLFWwindow* window = glfwCreateWindow(width, height, "Medieval Cannon - Phase 3", NULL, NULL);
+	GLFWwindow* window = glfwCreateWindow(width, height, "Medieval Cannon - Phase 5", NULL, NULL);
 	if (window == NULL) {
 		cout << "Failed to create window!" << endl;
 		glfwTerminate();
@@ -53,59 +71,65 @@ int main() {
 
 	Mesh ground = Primitives::CreatePlane(120.0f, 120.0f, Palette::Grass);
 
-	// --- Phase 3: three cannons side by side ----------------------------
-	// Centre cannon is keyboard-controlled; the two flankers are parked
-	// (their elevations and positions are baked in at construction).
-	const float cannonSpacing = 2.5f;     // distance between adjacent cannons (along Z)
-	Cannon centreCannon(vec3(0.0f, 0.0f,  0.0f));
-	Cannon leftCannon  (vec3(0.0f, 0.0f,  cannonSpacing));
-	Cannon rightCannon (vec3(0.0f, 0.0f, -cannonSpacing));
+	// --- Phase 5: three cannons lined up BEHIND the moat ----------------
+	// The compound centre is at (12, 0, 0).  The moat occupies x ∈ [-7, -1]
+	// and the bridge crosses it at z = 0.  We want the cannons a few
+	// metres beyond the moat on the -X side, all facing the +X direction
+	// so they look straight at the gate from across the moat (this is the
+	// "cannons first, facing the castle up front" layout from the brief).
+	const float cannonX = -10.0f;                  // 3 m beyond the moat's far bank
+	const float cannonSpacing = 2.5f;              // Z spacing between adjacent cannons
+	Cannon centreCannon(vec3(cannonX, 0.0f,  0.0f));
+	Cannon leftCannon  (vec3(cannonX, 0.0f,  cannonSpacing));
+	Cannon rightCannon (vec3(cannonX, 0.0f, -cannonSpacing));
 
-	// --- Phase 4: the Disney-style castle ---------------------------------
-	// The centre cannon's default elevation (12 deg) was tuned for the
-	// Phase 3 flat wall, but the door sits a bit higher (3 m tall). At
-	// 14 m/s and 18 deg the range is ~12 m, so a level shot lands squarely
-	// on the door. The two flankers are left at their default elevation
-	// for visual symmetry.
-	centreCannon.Elevate(6.0f);   // 12 -> 18 deg
+	// Default angle: every Cannon's barrel points along +X.  The constructor
+	// tips the barrel up 12 deg (Phase 3 default), so we lower it a bit
+	// so the default arc drops balls onto the door (3 m tall, ~9 m away
+	// from the muzzle at x=-8).  Net elevation: ~10 deg.
+	centreCannon.Elevate(-2.0f);   // 12 -> 10 deg total
 
-	// gateWidth = 2.0 m matches the Phase 3 doorway. wallHeight = 3.0 m
-	// matches the Phase 3 lintel. towerHeight = 5.0 m makes the towers
-	// visibly taller than the wall (the Disney look). curtainLength = 6.0 m
-	// extends the crenellated wall 6 m out from each tower.
-	Castle castle(vec3(12.0f, 0.0f, 0.0f),
-	              /*gateWidth=*/2.0f,
-	              /*wallHeight=*/3.0f,
-	              /*towerHeight=*/5.0f,
-	              /*curtainLength=*/6.0f);
+	// --- Phase 5: full compound castle (4 corners + curtains + gate) ---
+	// centreWorld = (12, 0, 0), so the -X face (where the gate lives) is
+	// at x = 0.  The moat is a 6x12 strip centred at x = -4, the bridge
+	// is 6 m long centred at x = -3.
+	CompoundCastle castle(vec3(12.0f, 0.0f, 0.0f));
 
-	// --- Phase 3: a row of trees behind the castle -----------------------
-	// The curtain walls extend 6 m left and right of the towers, so push
-	// the trees a bit further back (and to the side) to avoid overlap.
+	// --- A few trees scattered around the scene -------------------------
+	// We have a 24x24 m compound centred at (12, 0, 0), so there's room
+	// along the +X side and a bit of the +/-Z flanks to put trees.  Avoid
+	// the moat footprint (x ∈ [-7, -1]) and the cannon line (x ≈ -10).
 	std::vector<Tree> trees;
+	// Right side of the compound (+X face) - back where the trees used to be.
 	for (int i = 0; i < 6; i++) {
-		float x = 22.0f + float(i) * 3.0f;
-		float z = -8.0f + float(i % 2) * 4.0f;   // alternate front/back for a less-row look
+		float x = 28.0f + float(i) * 3.0f;
+		float z = -8.0f + float(i % 2) * 4.0f;
 		trees.emplace_back(vec3(x, 0.0f, z),
 		                   /*trunkH=*/2.0f, /*trunkR=*/0.20f,
 		                   /*crownH=*/3.0f, /*crownR=*/1.5f);
 	}
+	// Some trees behind the cannons on the -X side.
+	for (int i = 0; i < 4; i++) {
+		float z = -10.0f + float(i) * 6.0f;
+		trees.emplace_back(vec3(-15.0f, 0.0f, z),
+		                   2.0f, 0.20f, 3.0f, 1.5f);
+	}
 
-	// --- Phase 3: the wooden dummy robot inside the castle, past the gate --
-	// Castle's bricks sit at x = 11.6 to x = 12.4; the door is in front of
-	// them at x = 11.95 (z = 0); the robot is placed further past that, so
-	// it stands INSIDE the fort rather than in front of it. A cannon ball
-	// that breaks through both door panels will hit it.
-	Robot robot(vec3(13.5f, 0.0f, 0.0f));
+	// --- The wooden dummy robot inside the castle ------------------------
+	// Compound centre is at (12, 0, 0).  Gate is at x=0, door at x ≈ -0.4
+	// (i.e. a little past the gatehouse towers).  The robot stands a few
+	// metres inside the gate, at x = 3.
+	Robot robot(vec3(3.0f, 0.0f, 0.0f));
 
 	std::vector<Projectile> projectiles;
 
-	mat4 projMatrix = perspective(radians(50.0f), float(width) / float(height), 0.1f, 100.0f);
-	// Camera behind and to the right of the cannons, looking down the
-	// centre cannon's barrel toward the fort gate. Three cannons are
-	// arranged along Z, so a slightly wider FOV (50 deg instead of 45)
-	// keeps the leftmost and rightmost cannons in view.
-	mat4 view = lookAt(vec3(-5.0f, 3.0f, 7.0f), vec3(8.0f, 0.7f, 0.0f), vec3(0.0f, 1.0f, 0.0f));
+	mat4 projMatrix = perspective(radians(50.0f), float(width) / float(height), 0.1f, 200.0f);
+	// Start with preset 0 (behind cannons).  Updated each frame from the
+	// current preset slot, so 1/2/3/4 keys can swap the view live.
+	int currentPreset = 0;
+	mat4 view = lookAt(kPresets[currentPreset].eye,
+	                   kPresets[currentPreset].target,
+	                   vec3(0.0f, 1.0f, 0.0f));
 
 	GLuint viewLoc = glGetUniformLocation(shaderProgram.ID, "view");
 	GLuint projLoc = glGetUniformLocation(shaderProgram.ID, "proj");
@@ -123,6 +147,21 @@ int main() {
 		float deltaTime = float(currentTime - lastFrameTime);
 		lastFrameTime = currentTime;
 
+		// --- Input: number keys 1-4 swap camera preset -------------------
+		static bool key1Prev = false, key2Prev = false, key3Prev = false, key4Prev = false;
+		bool key1Now = glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS;
+		bool key2Now = glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS;
+		bool key3Now = glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS;
+		bool key4Now = glfwGetKey(window, GLFW_KEY_4) == GLFW_PRESS;
+		if (key1Now && !key1Prev) currentPreset = 0;
+		if (key2Now && !key2Prev) currentPreset = 1;
+		if (key3Now && !key3Prev) currentPreset = 2;
+		if (key4Now && !key4Prev) currentPreset = 3;
+		key1Prev = key1Now; key2Prev = key2Now; key3Prev = key3Now; key4Prev = key4Now;
+		view = lookAt(kPresets[currentPreset].eye,
+		              kPresets[currentPreset].target,
+		              vec3(0.0f, 1.0f, 0.0f));
+
 		// --- Input: Up/Down elevate the CENTRE cannon only ---------------
 		if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
 			centreCannon.Elevate(elevationSpeedDegPerSec * deltaTime);
@@ -131,10 +170,13 @@ int main() {
 			centreCannon.Elevate(-elevationSpeedDegPerSec * deltaTime);
 		}
 
-		// --- Input: Left/Right drive the CENTRE cannon only ---------------
+		// --- Input: Left/Right drive the CENTRE cannon forward/back along
+		// the barrel's local X axis.  With the barrel facing +X (towards
+		// the gate) this slides the cannon toward or away from the moat,
+		// so the player can fine-tune their firing range.
 		float drive = 0.0f;
 		if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) drive += driveSpeed * deltaTime;
-		if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)  drive -= driveSpeed * deltaTime;
+		if (glfwGetKey(window, GLFW_KEY_LEFT)  == GLFW_PRESS) drive -= driveSpeed * deltaTime;
 		if (drive != 0.0f) {
 			centreCannon.MoveForward(drive);
 		}
@@ -156,7 +198,7 @@ int main() {
 			glfwSetWindowShouldClose(window, true);
 		}
 
-		// --- Update projectiles and check the gate -------------------------
+		// --- Update projectiles and check the gate ------------------------
 		for (Projectile& ball : projectiles) {
 			ball.Update(deltaTime, Projectile::Gravity);
 			castle.CheckHit(ball.GetPosition(), ball.GetRadius());
@@ -183,7 +225,7 @@ int main() {
 		castle.Draw(shaderProgram);
 		robot.Draw(shaderProgram);
 
-		// Three cannons side by side.
+		// Three cannons side by side on the moat-far side.
 		centreCannon.Draw(shaderProgram);
 		leftCannon.Draw(shaderProgram);
 		rightCannon.Draw(shaderProgram);

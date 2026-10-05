@@ -330,6 +330,21 @@ key); fire is edge-triggered (one ball per press).}
                                      \texttt{Door} panels, two crenellated curtain walls,
                                      and a drawbridge.  Dispatches \texttt{CheckHit} to doors
                                      first, then brick stacks. \\
+\texttt{Project1/CornerTower.cpp/.h} & (Phase 5) Larger square tower for the four corners of
+                                       the compound: 4 \texttt{m} $\times$ 8 \texttt{m}
+                                       $\times$ 4 \texttt{m}, two arrow slits per face,
+                                       crenellated on all four sides, flag on top. \\
+\texttt{Project1/Water.cpp/.h}    & (Phase 5) Flat blue plane for the moat.  Single static mesh,
+                                   scaled at draw time. \\
+\texttt{Project1/Bridge.cpp/.h}   & (Phase 5) Stone bridge over the moat: deck + two rails
+                                   + four corner posts. \\
+\texttt{Project1/CompoundCastle.cpp/.h}
+                                   & (Phase 5) Top-level compound castle: four
+                                     \texttt{CornerTower}s, four crenulated curtain walls (the
+                                     western wall split around the gatehouse), the Phase 4
+                                     gatehouse (\texttt{Door} + \texttt{FortGate} + two
+                                     \texttt{Tower}s) on the $-X$ face, a moat on the cannon
+                                     side, and a bridge across the moat. \\
 \texttt{Project1/Tree.cpp/.h}     & (Phase 3) Cylinder trunk + cone leaves, drawn relative to one
                                      base translation. \\
 \texttt{Project1/Robot.cpp/.h}    & (Phase 3) Wooden dummy --- cube body/head + cylinder
@@ -341,7 +356,8 @@ key); fire is edge-triggered (one ball per press).}
                                      \texttt{app.exe} (no \texttt{libstdc++-6.dll}). \\
 \texttt{Project1/tools/}          & Throwaway screenshot tools (\texttt{CapturePhase2.cpp},
                                      \texttt{CapturePhase3.cpp}, \texttt{CapturePhase3Overview.cpp},
-                                     \texttt{CapturePhase4.cpp}, \texttt{CapturePhase4Overview.cpp}).
+                                     \texttt{CapturePhase4.cpp}, \texttt{CapturePhase4Overview.cpp},
+                                     \texttt{CapturePhase5.cpp}).
                                      Not part of the game, never added to the \texttt{Makefile}. \\
 \bottomrule
 \end{tabular}
@@ -992,6 +1008,94 @@ g++ -std=c++17 -O2 -ILibraries/include -I. \
 produces \texttt{build\_mingw/app.exe} with no warnings and no errors.
 The executable is self-contained (no \texttt{libstdc++-6.dll} required at
 runtime).
+
+\subsubsection*{Phase 5: the full compound castle with moat and bridge}
+
+Phase~4's gatehouse becomes the front face of a much larger
+\textbf{compound castle}.  Four new files, one refactor of \texttt{Main.cpp}:
+
+\begin{enumerate}[itemsep=1pt,topsep=2pt]
+  \item \textbf{CornerTower.}  A larger version of \texttt{Tower} for the
+        four corners of the compound: a 4\,m $\times$ 8\,m $\times$ 4\,m
+        stone body with four darker quoins, two arrow slits per face
+        (instead of one), crenellations on \emph{all four} edges of the
+        parapet (instead of just $+Z$), and a flag on top.
+  \item \textbf{Water.}  A flat blue plane (one static mesh, scaled at
+        draw time) for the moat surface.
+  \item \textbf{Bridge.}  A stone bridge over the moat: a thin deck plus
+        two low rails and four short corner posts.  Crosses the moat from
+        the cannon-side bank to the gatehouse door.
+  \item \textbf{CompoundCastle.}  The top-level composition owns four
+        \texttt{CornerTower}s, four crenellated curtain walls (the
+        western wall split around the gatehouse), the Phase~4 gatehouse
+        on the $-X$ face (\texttt{Door} + \texttt{FortGate} + two
+        \texttt{Tower}s), a \texttt{Water} moat, and a \texttt{Bridge}
+        across the moat.
+\end{enumerate}
+
+The four curtain walls each get a single big stone body (one box) plus
+a row of merlons on top from \texttt{Crenellation::AlongX} or
+\texttt{AlongZ}.  The $-X$ curtain is split into two pieces straddling
+the gatehouse: from $z = -12$ to $z = -3.75$ and from $z = +3.75$ to
+$z = +12$.  Merlon count per wall is cached as an \texttt{int} field
+(mostly cosmetic; the walls are always drawn wholesale).
+
+\paragraph{Cannons move across the moat.}
+In \texttt{Main.cpp} the three cannons are now constructed at $x = -10$
+(three metres beyond the moat's far bank), still side by side at $z = \{0,
+\pm 2.5\}$, all with their barrels facing $+X$ --- i.e. aimed straight at
+the gate across the moat.  The default elevation is dropped from $12^\circ$
+to $10^\circ$ so the ball arcs gently over the water and lands on the
+door ($9$ m downrange from the muzzle, $1.5$ m up).
+
+\paragraph{Camera presets.}
+\texttt{Main.cpp} now ships four preset cameras, switchable at any time
+with the number keys:
+\begin{itemize}[itemsep=0pt,topsep=0pt]
+  \item \texttt{1} --- behind the cannons (default; what the player
+        sees when the game boots).
+  \item \texttt{2} --- front of the castle (looking back across the moat
+        at the cannons).
+  \item \texttt{3} --- side view.
+  \item \texttt{4} --- top-down (full layout in one frame).
+\end{itemize}
+A static struct \texttt{CameraPreset \{ eye; target; label; \}} holds
+the four, and the input loop uses four pairs of edge-detection
+booleans to swap them.
+
+\begin{figure}[H]
+  \centering
+  \begin{subfigure}[t]{0.32\linewidth}\centering
+    \includegraphics[width=\linewidth]{phase5_capture}\\
+    \small Behind the cannons.
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.32\linewidth}\centering
+    \includegraphics[width=\linewidth]{phase5_overview}\\
+    \small Top-down.
+  \end{subfigure}\hfill
+  \begin{subfigure}[t]{0.32\linewidth}\centering
+    \includegraphics[width=\linewidth]{phase5_frontview}\\
+    \small Front of the castle.
+  \end{subfigure}
+  \caption{Phase 5, three views.  Left: looking from behind the cannons
+  across the moat and bridge to the gatehouse.  Centre: the full $24\times
+  24$ m compound with cannons, moat, bridge, gatehouse and four corner
+  towers in one frame.  Right: looking at the broken castle from the $+X$
+  side, with the broken doorway visible between the flanking towers.}
+  \label{fig:p5}
+\end{figure}
+
+\subsection{Phase 5: the door still breaks}
+
+\texttt{CapturePhase5.cpp} ticks the simulation $4$~seconds with eight
+auto-fired shots and prints
+\begin{lstlisting}[language=bash]
+After 4s: alive door panels = 0 (out of 2), alive bricks = 9 (out of 16), live balls = 1
+\end{lstlisting}
+Both door panels broken, seven bricks broken, one ball still in flight.
+The sphere-vs-AABB fix from Phase~4 carries over unchanged: the new
+\texttt{CompoundCastle::CheckHit} just forwards to the same \texttt{Door::CheckHit}
+and \texttt{FortGate::CheckHit} under the hood.
 
 %=============================================================================
 \section{Limitations and extensions}

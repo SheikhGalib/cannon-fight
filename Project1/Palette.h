@@ -23,6 +23,8 @@ namespace Palette {
     inline const glm::vec3 Bark      (0.36f, 0.22f, 0.10f);  // tree trunks (Phase 3)
     inline const glm::vec3 Leaf      (0.16f, 0.42f, 0.18f);  // tree leaves (Phase 3)
     inline const glm::vec3 Copper    (0.55f, 0.40f, 0.20f);  // dummy robot body (Phase 3)
+    inline const glm::vec3 Water     (0.18f, 0.40f, 0.62f);  // moat surface (Phase 5)
+    inline const glm::vec3 Bridge    (0.45f, 0.43f, 0.38f);  // stone bridge deck (Phase 5)
 
 }
 

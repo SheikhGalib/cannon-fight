@@ -1,0 +1,256 @@
+// CapturePhase5.cpp
+// =================
+//
+// Verification screenshot for Phase 5: the full compound castle (4 corner
+// towers + 4 curtain walls + main gatehouse) with a moat, a bridge, and
+// three cannons on the far side of the moat.  Captures the "behind the
+// cannons" view that Main.cpp uses by default.
+//
+// Build & run by hand (the Makefile doesn't drive this tool):
+//   g++ -std=c++17 -O2 -ILibraries/include -I. -I../opengl-cpp/deps/glfw/include \
+//       tools/CapturePhase5.cpp Cannon.cpp Projectile.cpp Wall.cpp FortGate.cpp \
+//       Crenellation.cpp Door.cpp Tower.cpp Castle.cpp CornerTower.cpp \
+//       CompoundCastle.cpp Water.cpp Bridge.cpp Tree.cpp Robot.cpp \
+//       Carriage.cpp Wheel.cpp Shaft.cpp VAO.cpp VBO.cpp EBO.cpp shaderClass.cpp \
+//       glad.c Transform.cpp Mesh.cpp Primitives.cpp Part.cpp \
+//       -L../opengl-cpp/deps/glfw/lib-mingw-w64 -lglfw3 -lopengl32 -lgdi32 \
+//       -static-libgcc -static-libstdc++ -static \
+//       -o build_mingw/capture5.exe
+//   ./build_mingw/capture5.exe
+
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
+#include <cstdio>
+#include <algorithm>
+
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
+#include "shaderClass.h"
+#include "Primitives.h"
+#include "Dimensions.h"
+#include "Palette.h"
+#include "Carriage.h"
+#include "Wheel.h"
+#include "Shaft.h"
+#include "Cannon.h"
+#include "Projectile.h"
+#include "FortGate.h"
+#include "Crenellation.h"
+#include "Door.h"
+#include "Tower.h"
+#include "Castle.h"
+#include "CornerTower.h"
+#include "CompoundCastle.h"
+#include "Water.h"
+#include "Bridge.h"
+#include "Tree.h"
+#include "Robot.h"
+
+using namespace glm;
+
+static const int SHOT_W = 1200;
+static const int SHOT_H = 700;
+
+static void WriteLE32(std::ofstream& f, unsigned int v) {
+    f.put(char(v & 0xFF)); f.put(char((v >> 8) & 0xFF));
+    f.put(char((v >> 16) & 0xFF)); f.put(char((v >> 24) & 0xFF));
+}
+static void WriteLE16(std::ofstream& f, unsigned short v) {
+    f.put(char(v & 0xFF)); f.put(char((v >> 8) & 0xFF));
+}
+
+static void SaveBMP(const std::string& path, int w, int h, const std::vector<unsigned char>& rgb) {
+    const int rowBytes = w * 3;
+    const int padding = (4 - (rowBytes % 4)) % 4;
+    const unsigned int pixelBytes = (rowBytes + padding) * h;
+
+    std::ofstream f(path, std::ios::binary);
+    f.put('B'); f.put('M');
+    WriteLE32(f, 14 + 40 + pixelBytes);
+    WriteLE32(f, 0);
+    WriteLE32(f, 14 + 40);
+    WriteLE32(f, 40);
+    WriteLE32(f, (unsigned int)w);
+    WriteLE32(f, (unsigned int)h);
+    WriteLE16(f, 1);
+    WriteLE16(f, 24);
+    WriteLE32(f, 0); WriteLE32(f, pixelBytes);
+    WriteLE32(f, 2835); WriteLE32(f, 2835); WriteLE32(f, 0); WriteLE32(f, 0);
+
+    for (int y = 0; y < h; y++) {
+        const unsigned char* row = rgb.data() + size_t(y) * rowBytes;
+        for (int x = 0; x < w; x++) {
+            f.put(char(row[x * 3 + 2]));
+            f.put(char(row[x * 3 + 1]));
+            f.put(char(row[x * 3 + 0]));
+        }
+        for (int p = 0; p < padding; p++) f.put(char(0));
+    }
+}
+
+static void RenderFrame(Shader& shaderProgram,
+                        GLuint viewLoc, GLuint projLoc, GLuint modelLoc, GLuint lightDirLoc,
+                        const mat4& view, const mat4& proj,
+                        Mesh& ground, std::vector<Tree>& trees,
+                        CompoundCastle& castle, Robot& robot,
+                        Cannon& centreCannon, Cannon& leftCannon, Cannon& rightCannon,
+                        std::vector<Projectile>& projectiles,
+                        const vec3& lightDir) {
+    glClearColor(0.55f, 0.72f, 0.87f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    shaderProgram.Activate();
+    glUniformMatrix4fv(viewLoc, 1, GL_FALSE, value_ptr(view));
+    glUniformMatrix4fv(projLoc, 1, GL_FALSE, value_ptr(proj));
+    glUniform3fv(lightDirLoc, 1, value_ptr(lightDir));
+
+    mat4 groundMatrix = translate(mat4(1.0f), vec3(0.0f, -0.01f, 0.0f));
+    glUniformMatrix4fv(modelLoc, 1, GL_FALSE, value_ptr(groundMatrix));
+    ground.Draw();
+
+    for (Tree& t : trees) t.Draw(shaderProgram);
+    castle.Draw(shaderProgram);
+    robot.Draw(shaderProgram);
+    centreCannon.Draw(shaderProgram);
+    leftCannon.Draw(shaderProgram);
+    rightCannon.Draw(shaderProgram);
+    for (Projectile& b : projectiles) b.Draw(shaderProgram);
+}
+
+int main() {
+    if (!glfwInit()) return 1;
+
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    GLFWwindow* window = glfwCreateWindow(SHOT_W, SHOT_H, "CapturePhase5", NULL, NULL);
+    if (!window) return 2;
+    glfwMakeContextCurrent(window);
+    gladLoadGL();
+    glViewport(0, 0, SHOT_W, SHOT_H);
+    glEnable(GL_DEPTH_TEST);
+
+    Shader shaderProgram("lit.vert", "lit.frag");
+
+    Mesh ground = Primitives::CreatePlane(120.0f, 120.0f, Palette::Grass);
+
+    // Cannons on the moat-far side, identical to Main.cpp.
+    const float cannonX = -10.0f;
+    const float cannonSpacing = 2.5f;
+    Cannon centreCannon(vec3(cannonX, 0.0f,  0.0f));
+    Cannon leftCannon  (vec3(cannonX, 0.0f,  cannonSpacing));
+    Cannon rightCannon (vec3(cannonX, 0.0f, -cannonSpacing));
+    // Cannon defaults to 12 deg; we want ~10 deg so the ball arcs gently
+    // into the door (which is 3 m tall, ~9 m downrange from the muzzle).
+    centreCannon.Elevate(-2.0f);   // 12 -> 10 deg total
+
+    CompoundCastle castle(vec3(12.0f, 0.0f, 0.0f));
+
+    std::vector<Tree> trees;
+    for (int i = 0; i < 6; i++) {
+        float x = 28.0f + float(i) * 3.0f;
+        float z = -8.0f + float(i % 2) * 4.0f;
+        trees.emplace_back(vec3(x, 0.0f, z), 2.0f, 0.20f, 3.0f, 1.5f);
+    }
+    for (int i = 0; i < 4; i++) {
+        float z = -10.0f + float(i) * 6.0f;
+        trees.emplace_back(vec3(-15.0f, 0.0f, z), 2.0f, 0.20f, 3.0f, 1.5f);
+    }
+
+    Robot robot(vec3(3.0f, 0.0f, 0.0f));
+
+    std::vector<Projectile> projectiles;
+
+    mat4 projMat = perspective(radians(50.0f), float(SHOT_W) / float(SHOT_H), 0.1f, 200.0f);
+    vec3 lightDir = normalize(vec3(-0.4f, -1.0f, -0.5f));
+
+    GLuint viewLoc = glGetUniformLocation(shaderProgram.ID, "view");
+    GLuint projLoc = glGetUniformLocation(shaderProgram.ID, "proj");
+    GLuint modelLoc = glGetUniformLocation(shaderProgram.ID, "model");
+    GLuint lightDirLoc = glGetUniformLocation(shaderProgram.ID, "lightDir");
+
+    // Tick a few seconds with auto-fired balls so the doors get broken.
+    float dt = 1.0f / 60.0f;
+    for (int frame = 0; frame < 240; frame++) {
+        if (frame % 30 == 0) {
+            vec3 muzzle = centreCannon.GetMuzzleWorldPosition();
+            vec3 fwd = centreCannon.GetForwardWorldDirection();
+            projectiles.emplace_back(muzzle, fwd * Projectile::DefaultSpeed, Projectile::DefaultRadius);
+        }
+        for (Projectile& b : projectiles) {
+            b.Update(dt, Projectile::Gravity);
+            castle.CheckHit(b.GetPosition(), b.GetRadius());
+        }
+        for (auto it = projectiles.begin(); it != projectiles.end();) {
+            if (it->IsDead()) it = projectiles.erase(it);
+            else ++it;
+        }
+    }
+
+    std::cout << "After 4s: alive door panels = " << castle.AliveDoorPanelCount()
+              << " (out of " << castle.TotalDoorPanelCount() << "), "
+              << "alive bricks = " << castle.AliveBrickCount()
+              << " (out of " << castle.TotalBrickCount() << "), "
+              << "live balls = " << projectiles.size() << std::endl;
+
+    // ---- Shot 1: behind cannons (Main.cpp's default) ---------------------
+    {
+        mat4 view = lookAt(vec3(-18.0f, 5.5f, 8.0f), vec3(12.0f, 2.5f, 0.0f), vec3(0.0f, 1.0f, 0.0f));
+        RenderFrame(shaderProgram, viewLoc, projLoc, modelLoc, lightDirLoc,
+                    view, projMat, ground, trees, castle, robot,
+                    centreCannon, leftCannon, rightCannon, projectiles, lightDir);
+        glFinish();
+        std::vector<unsigned char> pixels(SHOT_W * SHOT_H * 3);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadPixels(0, 0, SHOT_W, SHOT_H, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+        SaveBMP("phase5_capture.bmp", SHOT_W, SHOT_H, pixels);
+        std::cout << "Saved phase5_capture.bmp (behind cannons)" << std::endl;
+    }
+
+    // ---- Shot 2: top-down for a layout overview --------------------------
+    {
+        mat4 view = lookAt(vec3(12.0f, 55.0f, 0.5f), vec3(12.0f, 0.0f, 0.0f), vec3(0.0f, 0.0f, -1.0f));
+        RenderFrame(shaderProgram, viewLoc, projLoc, modelLoc, lightDirLoc,
+                    view, projMat, ground, trees, castle, robot,
+                    centreCannon, leftCannon, rightCannon, projectiles, lightDir);
+        glFinish();
+        std::vector<unsigned char> pixels(SHOT_W * SHOT_H * 3);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadPixels(0, 0, SHOT_W, SHOT_H, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+        SaveBMP("phase5_overview.bmp", SHOT_W, SHOT_H, pixels);
+        std::cout << "Saved phase5_overview.bmp (top-down)" << std::endl;
+    }
+
+    // ---- Shot 3: front-of-castle view (looking back at the cannons) -----
+    {
+        mat4 view = lookAt(vec3(32.0f, 9.0f, 22.0f), vec3(-18.0f, 2.5f, 0.0f), vec3(0.0f, 1.0f, 0.0f));
+        RenderFrame(shaderProgram, viewLoc, projLoc, modelLoc, lightDirLoc,
+                    view, projMat, ground, trees, castle, robot,
+                    centreCannon, leftCannon, rightCannon, projectiles, lightDir);
+        glFinish();
+        std::vector<unsigned char> pixels(SHOT_W * SHOT_H * 3);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadPixels(0, 0, SHOT_W, SHOT_H, GL_RGB, GL_UNSIGNED_BYTE, pixels.data());
+        SaveBMP("phase5_frontview.bmp", SHOT_W, SHOT_H, pixels);
+        std::cout << "Saved phase5_frontview.bmp (front of castle)" << std::endl;
+    }
+
+    ground.Delete();
+    centreCannon.Delete();
+    leftCannon.Delete();
+    rightCannon.Delete();
+    castle.Delete();
+    for (Tree& t : trees) t.Delete();
+    robot.Delete();
+    for (Projectile& b : projectiles) b.Delete();
+    shaderProgram.Delete();
+
+    glfwDestroyWindow(window);
+    glfwTerminate();
+    return 0;
+}

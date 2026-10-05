@@ -3375,6 +3375,117 @@ stacks-এর কিছু brick ভাঙে। Count: 0/2 door panels alive, 9
 
 ---
 
+## পর্ব ৩০ — Phase 5: পুরো কেল্লা, খাদ আর সেতু
+
+Phase 4-এর Disney-style gatehouse-কে আমরা Phase 5-এ একটা পুরো **compound castle**
+বানিয়েছি। চারটে **corner tower**, ৪টে **curtain wall**, একটা **moat** (জলের
+খাদ), আর সেটার উপর দিয়ে যাওয়া **stone bridge**। কামানগুলো এখন moat-এর
+ওপারে দাঁড়িয়ে, কেল্লার দিকে মুখ করে।
+
+কোন ছবিটা দেখলে কী বোঝা যায়:
+
+| দৃশ্য | ফাইল |
+|---|---|
+| কামানের পেছন থেকে, bridge-moat-গেট এক নজরে | `phase5_capture.png` |
+| উপর থেকে (top-down), পুরো compound-এর layout | `phase5_overview.png` |
+| কেল্লার সামনে থেকে, ভাঙা দরজা দিয়ে ভেতরে দেখা | `phase5_frontview.png` |
+
+![Phase 5 — কামানের পেছন থেকে](images/walkthrough/phase5_capture.png)
+
+![Phase 5 — উপর থেকে](images/walkthrough/phase5_overview.png)
+
+![Phase 5 — কেল্লার সামনে](images/walkthrough/phase5_frontview.png)
+
+## পর্ব ৩১ — Phase 5: `CornerTower` — কোণার বড় টাওয়ার
+
+Compound-এর চারটে কোণায় বসানো বড় square tower। `Tower`-এর মতোই
+`Part`-লাফলাফ, কিন্তু **আকারে বড়** (4×4×8 m বদলে 2.5×2.5×5 m) এবং প্রতি
+পাশে **দুটো করে arrow slit** (ওপরের-নিচের)।
+
+### ৩১.১ শরীর + quoins + slits
+
+প্রধান পাথরের ঘনভাগ (`body`), চারটে কোণার **quoin**, এবং ৮টা arrow slit
+(`Bore` রঙের) — সব কিছুই `Tower`-এর constructor-এর মতো, শুধু সংখ্যা/আকার
+বড়।
+
+### ৩১.২ চার পাশে parapet
+
+Tower-এ শুধু +Z দিকে একটা parapet ছিল। `CornerTower`-এ **চার পাশেই**
+parapet আছে — `Crenellation::AlongX` দুবার (X-দিকে দুটো) এবং
+`Crenellation::AlongZ` দুবার (Z-দিকে দুটো) কল করে।
+
+### ৩১.৩ পতাকা-দণ্ড
+
+Tower-এর মতোই, শুধু একটু লম্বা।
+
+## পর্ব ৩২ — Phase 5: `Water` — moat-এর জলের তল
+
+`Water` খুবই ছোট ক্লাস: একটা রেক্টাঙ্গুলার plane (`Palette::Water`
+রঙে) একটা ওপর-নিচু স্থানাঙ্কে বসানো। `Water`-কে **static Mesh** ভাবে
+রাখা হয়েছে (একটাই মেশ, একটাই plane)। প্রতিটা moat বসানোর সময় সেই
+মেশটাই scale করে দেওয়া হয় model matrix দিয়ে।
+
+## পর্ব ৩৩ — Phase 5: `Bridge` — পাথরের সেতু
+
+`Bridge`-এর তিনটা অংশ:
+
+1. **Deck** — পাতলা (0.15 m) পাথরের চাকতি, moat-এর ওপরে, জলের উপরে
+   থাকার জন্য।
+2. **দুটো rail** — deck-এর দুপাশে লম্বা পাথরী সরু দণ্ড।
+3. **চারটা post** — deck-এর চার কোণায় ছোট খাড়া পাথর।
+
+সব কিছু `Palette::Bridge` রঙে।
+
+## পর্ব ৩৪ — Phase 5: `CompoundCastle` — সব জোড়া লাগানো
+
+`CompoundCastle` হলো Phase 5-এর মাস্টার ক্লাস। এটার মধ্যে আছে:
+
+* ৪টা `CornerTower` — compound-এর চার কোণায়।
+* ৪টা `curtain wall` — প্রতি পাশে একটা, মেরুন-সারি (Crenellation) সহ।
+  পশ্চিম দিকের curtain wall-টা gatehouse-এর জন্য দুই টুকরোয় ভাগ
+  (z = ±3.75 এর দুপাশে)।
+* Phase 4-এর `Castle`-এর টুকরোগুলোই (`Door`, `FortGate`, দুটো `Tower`)
+  — পশ্চিম দেয়ালের মাঝখানে, -X মুখী।
+* `Water` moat আর `Bridge` — gatehouse-এর সামনে।
+
+`CheckHit`, `AliveDoorPanelCount`, `AliveBrickCount` — সব Phase 4-এর
+`Castle`-এর মতোই, শুধু `castle.Doors.CheckHit(...)` না বলে
+`castle.CheckHit(...)`।
+
+## পর্ব ৩৫ — Phase 5: `Main.cpp` — কামানের নতুন অবস্থান, ক্যামেরা preset
+
+### ৩৫.১ কামানের অবস্থান
+
+Phase 4-এ কামান ছিল `x = 0`-এর কাছে, gatehouse-এর সামনে। Phase 5-এ
+**moat-এর ওপারে** `x = -10`-এ। তিনটে কামান পাশাপাশি, সব **+X দিকে**
+(কেল্লার দিকে) মুখ করে।
+
+`Elevate(-2)` দিয়ে default 12° → 10° করা হয়েছে যাতে বলটা moat পার
+হয়ে দরজায় (~9 m দূরে) গিয়ে পড়ে।
+
+### ৩৫.২ ক্যামেরা presets
+
+`kPresets[4]` অ্যারেতে চারটা fixed ক্যামেরা অবস্থান আছে:
+
+| কী | দৃশ্য |
+|---|---|
+| `1` | কামানের পেছন থেকে (default) |
+| `2` | কেল্লার সামনে থেকে, ভেতরের দিকে তাকিয়ে |
+| `3` | পাশ থেকে |
+| `4` | উপর থেকে (top-down) |
+
+ইনপুট loop-এ `glfwGetKey(... GLFW_KEY_1/2/3/4)` দিয়ে **edge detection**
+(আগের frame-এ চাপা ছিল কি না) করে current preset বদলানো হয়।
+
+### ৩৫.৩ যাচাই
+
+`tools/CapturePhase5.cpp` একই setup দিয়ে ৪ সেকেন্ড অটো-ফায়ার করে
+3টা ভিউ সেভ করে (behind cannons, top-down, front of castle)। ফলাফল:
+**দুটো দরজার প্যানেলই ভাঙা** (0/2 alive), 7টা পাথরের ইট ভাঙা (9/16
+alive)।
+
+---
+
 ## শব্দকোষ (Glossary)
 
 - **VAO** — Vertex Array Object. VBO-র সংখ্যাগুলো কীভাবে পড়তে হবে সেই নিয়ম GPU-তে সংরক্ষণ করে।
@@ -3409,6 +3520,10 @@ stacks-এর কিছু brick ভাঙে। Count: 0/2 door panels alive, 9
 - **arrow slit** — লম্বা সরু জানালা; ভেতর থেকে তীর ছোড়া যায়, বাইরের আঘাত সহ্য করে। Disney-ক্লাসিক্যাল castle-এর প্রতীক।
 - **curtain wall** — দুটো tower-এর মাঝের দীর্ঘ দেয়াল; সাধারণত crenellated।
 - **drawbridge** — দরজার সামনে কাঠের পাতলা সেতু; মাঝে মাঝে তোলা যায় (এখানে শুধুই সাজসজ্জা)।
+- **moat** — দুর্গের চারপাশে (реже — শুধু এক পাশে) খন্ঠ করা পানি ভরা খাদ; আক্রমণকারীর গতি ও ভারী যন্ত্রপাতির যাত্রা আটকায়।
+- **compound (castle)** — corner tower + curtain wall দিয়ে ঘেরা দুর্গের চতুর্দশ; Phase 5-এ `CompoundCastle`।
+- **corner tower** — compound-এর চার কোণার বড় square tower; `CornerTower` Phase 5-এ।
+- **camera preset** — fixed eye/target সহ একটা ক্যামেরা; Phase 5-এ `1/2/3/4` key-তে সাঁওয়াপ হয়।
 
 ---
 
