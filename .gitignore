@@ -20,6 +20,8 @@ opengl-cpp/build/
 Project1/run_out*.log
 Project1/run_err*.log
 
+Project1/capture/
+
 # --- Documentation-image sidecars ------------------------------------------
 # tools/bmp2png.ps1 deletes the .bmp intermediates, but if the conversion
 # ever fails mid-run they pile up; ignore either way.
