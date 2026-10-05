@@ -373,6 +373,33 @@ bool CompoundCastle::CheckHit(glm::vec3 sphereCentre, float sphereRadius) {
     checkTower(gatehouseTower);
     checkTower(gatehouseTower2);
 
+    // Front curtain wall breach: if outer segment breaks, kill inner segment as well so the entire wall section is cleared!
+    if (curtainW.segments.size() > 1 && !curtainW.segments[0].alive && curtainW.segments[1].alive) {
+        curtainW.segments[1].alive = false;
+        curtainW.segments[1].mesh.Delete();
+        auto it = std::find_if(solidBoxes.begin(), solidBoxes.end(),
+            [&](const SolidBox& b) {
+                return b.centre == curtainW.segments[1].centre && b.half == curtainW.segments[1].half;
+            });
+        if (it != solidBoxes.end()) solidBoxes.erase(it);
+    }
+    if (curtainW.segments.size() > 3 && !curtainW.segments[2].alive && curtainW.segments[3].alive) {
+        curtainW.segments[3].alive = false;
+        curtainW.segments[3].mesh.Delete();
+        auto it = std::find_if(solidBoxes.begin(), solidBoxes.end(),
+            [&](const SolidBox& b) {
+                return b.centre == curtainW.segments[3].centre && b.half == curtainW.segments[3].half;
+            });
+        if (it != solidBoxes.end()) solidBoxes.erase(it);
+    }
+
+    // If door or gate bricks broken, or both gatehouse towers collapsed, clear the gate arch & chains!
+    if (doors.AlivePanelCount() == 0 || gate.AliveBrickCount() == 0 ||
+        (!gatehouseTower.IsAlive() && !gatehouseTower2.IsAlive())) {
+        gate.SetAlive(false);
+        bridge.SetChainsVisible(false);
+    }
+
     return any;
 }
 
@@ -401,12 +428,6 @@ bool CompoundCastle::IsFrontWallPieceAlive(int pieceIdx) const {
 }
 
 bool CompoundCastle::HitsStatic(glm::vec3 sphereCentre, float sphereRadius) const {
-    // Sphere-vs-AABB against every solid wall / tower AABB the castle
-    // knows about.  Returns true if the sphere overlaps any of them.  The
-    // usual offset - clamp = delta trick: clamp each axis of the sphere
-    // centre into the box, then the resulting clamped point is the
-    // closest point on the box.  If the distance from that point to the
-    // sphere centre is less than the sphere's radius, it's a hit.
     const float r2 = sphereRadius * sphereRadius;
     for (const SolidBox& b : solidBoxes) {
         glm::vec3 delta(
@@ -420,11 +441,33 @@ bool CompoundCastle::HitsStatic(glm::vec3 sphereCentre, float sphereRadius) cons
 }
 
 void CompoundCastle::Update(float deltaTime) {
-    // The doors have break physics (Phase 5+), the bridge has retract
-    // animation (Phase 6).  Wire both updates here so the rest of the
-    // scene graph doesn't have to know about either.
     doors.Update(deltaTime);
     bridge.Update(deltaTime);
+
+    if (doors.AlivePanelCount() == 0 || gate.AliveBrickCount() == 0 ||
+        (!gatehouseTower.IsAlive() && !gatehouseTower2.IsAlive())) {
+        gate.SetAlive(false);
+        bridge.SetChainsVisible(false);
+    }
+
+    if (curtainW.segments.size() > 1 && !curtainW.segments[0].alive && curtainW.segments[1].alive) {
+        curtainW.segments[1].alive = false;
+        curtainW.segments[1].mesh.Delete();
+        auto it = std::find_if(solidBoxes.begin(), solidBoxes.end(),
+            [&](const SolidBox& b) {
+                return b.centre == curtainW.segments[1].centre && b.half == curtainW.segments[1].half;
+            });
+        if (it != solidBoxes.end()) solidBoxes.erase(it);
+    }
+    if (curtainW.segments.size() > 3 && !curtainW.segments[2].alive && curtainW.segments[3].alive) {
+        curtainW.segments[3].alive = false;
+        curtainW.segments[3].mesh.Delete();
+        auto it = std::find_if(solidBoxes.begin(), solidBoxes.end(),
+            [&](const SolidBox& b) {
+                return b.centre == curtainW.segments[3].centre && b.half == curtainW.segments[3].half;
+            });
+        if (it != solidBoxes.end()) solidBoxes.erase(it);
+    }
 }
 
 int CompoundCastle::AliveDoorPanelCount() const { return doors.AlivePanelCount(); }

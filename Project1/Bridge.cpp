@@ -163,10 +163,12 @@ void Bridge::Draw(Shader& shader) {
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(p.local));
         p.mesh.Draw();
     }
-    for (Chain& ch : chains) {
-        for (AnimatedPart& link : ch.links) {
-            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(link.local));
-            link.mesh.Draw();
+    if (chainsVisible) {
+        for (Chain& ch : chains) {
+            for (AnimatedPart& link : ch.links) {
+                glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(link.local));
+                link.mesh.Draw();
+            }
         }
     }
 }

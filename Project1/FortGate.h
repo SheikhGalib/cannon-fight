@@ -46,6 +46,9 @@ public:
     int AliveBrickCount() const;
     int TotalBrickCount() const { return (int)bricks.size(); }
 
+    void SetAlive(bool a) { isAlive = a; }
+    bool IsAlive() const  { return isAlive; }
+
     void Draw(Shader& shader);
     void Delete();
 
@@ -62,8 +65,9 @@ private:
     };
 
     std::vector<Brick> bricks;
-    std::vector<Part>  staticParts;  // lintel + 2 pillars - never break
+    std::vector<Part>  staticParts;  // lintel + 2 pillars
     glm::vec3 brickSize;
+    bool isAlive = true;
 };
 
 #endif

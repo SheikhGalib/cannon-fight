@@ -48,6 +48,9 @@ public:
     // bridge side.
     glm::vec3 Hinge() const { return hinge; }
 
+    void SetChainsVisible(bool visible) { chainsVisible = visible; }
+    bool AreChainsVisible() const { return chainsVisible; }
+
     void Draw(Shader& shader);
     void Delete();
 
@@ -93,6 +96,7 @@ private:
     // point on the inner end of the rail (which moves as the bridge
     // rotates).
     static constexpr int kChainLinks = 12;
+    bool chainsVisible = true;
 };
 
 #endif

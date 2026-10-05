@@ -36,6 +36,20 @@ public:
     // Phase 7: rotate the whole soldier around Y (used so the army
     // consistently faces the castle door rather than the default +X).
     void SetYaw(float degrees) { yawDegrees = degrees; }
+    float GetYaw() const { return yawDegrees; }
+
+    // Pitch rotation (e.g. -90 deg when killed in combat so they lie on ground).
+    void SetPitch(float degrees) { pitchDegrees = degrees; }
+    float GetPitch() const { return pitchDegrees; }
+
+    // Combat lunge offset along soldier's forward facing direction.
+    void SetAttackOffset(float offset) { attackOffset = offset; }
+    float GetAttackOffset() const { return attackOffset; }
+
+    float health = 100.0f;
+    void TakeDamage(float dmg) { health = std::max(0.0f, health - dmg); }
+    bool IsDead() const { return health <= 0.0f; }
+    void SetDead() { health = 0.0f; pitchDegrees = -90.0f; }
 
     void Draw(Shader& shader);
     void Delete();
@@ -44,6 +58,8 @@ private:
     std::vector<Part> parts;
     glm::mat4 transform;
     float yawDegrees = 0.0f;
+    float pitchDegrees = 0.0f;
+    float attackOffset = 0.0f;
 };
 
 #endif

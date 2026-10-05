@@ -201,9 +201,11 @@ int FortGate::AliveBrickCount() const {
 }
 
 void FortGate::Draw(Shader& shader) {
+    if (!isAlive) return;
+
     GLuint modelLoc = glGetUniformLocation(shader.ID, "model");
 
-    // Static pieces (lintel, pillars) - always drawn, never broken.
+    // Static pieces (lintel, pillars)
     for (Part& p : staticParts) {
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(p.local));
         p.mesh.Draw();

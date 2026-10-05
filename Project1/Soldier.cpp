@@ -107,10 +107,17 @@ void Soldier::SetPosition(glm::vec3 baseWorld) {
 }
 
 void Soldier::Draw(Shader& shader) {
-    glm::mat4 m = (yawDegrees == 0.0f) ? transform
-                                        : glm::rotate(transform,
-                                                                    glm::radians(yawDegrees),
-                                                                    glm::vec3(0.0f, 1.0f, 0.0f));
+    glm::mat4 m = transform;
+    if (yawDegrees != 0.0f) {
+        m = glm::rotate(m, glm::radians(yawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
+    }
+    if (attackOffset != 0.0f) {
+        m = glm::translate(m, glm::vec3(attackOffset, 0.0f, 0.0f));
+    }
+    if (pitchDegrees != 0.0f) {
+        // Fall flat onto ground when dead
+        m = glm::rotate(m, glm::radians(pitchDegrees), glm::vec3(0.0f, 0.0f, 1.0f));
+    }
     DrawParts(shader, m, parts);
 }
 

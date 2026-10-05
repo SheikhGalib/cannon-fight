@@ -110,7 +110,7 @@ static bool SaveBMP(const std::string& path, int w, int h, const std::vector<uns
 
 // Forward-declare the battle sim phases (kept identical to Main.cpp).
 enum class TimeOfDay { Day, Night };
-enum class BattlePhase { Inactive, BridgeUp, Defending, Advance, End };
+enum class BattlePhase { Inactive, BridgeUp, Defending, Advance, Melee, End };
 enum class FireState { Idle, CrewWalking, Lighting, CrewReturning };
 
 struct FireSequence {
@@ -285,12 +285,17 @@ int main() {
     float cannonAutoFireTimer = 0.0f;
     const float cannonAutoFirePeriod = 1.2f;
 
-    // Phase 9 (extra): army march behaviour (mirrors Main.cpp).
-    std::vector<vec3> armyMarchStart(army.size());
-    std::vector<vec3> armyMarchTarget(army.size());
+    std::vector<vec3> armyOriginalPos(army.size());
+    for (size_t i = 0; i < army.size(); i++) armyOriginalPos[i] = army[i].GetPosition();
+    std::vector<vec3> defenderOriginalPos(defenders.size());
+    for (size_t i = 0; i < defenders.size(); i++) defenderOriginalPos[i] = defenders[i].GetPosition();
+
+    std::vector<int> armyMarchOrder;
     bool armyMarchStarted = false;
-    const float kArmyMarchSpeed = 2.5f;
-    const float kArmyMarchTargetX = 8.0f;
+    float leadMarchDistance = 0.0f;
+    const float kArmyMarchSpeed = 2.8f;
+    float meleeTimer = 0.0f;
+    float meleeHitTimer = 0.0f;
 
     std::vector<Arrow> arrows;
     std::vector<Projectile> projectiles;
@@ -433,61 +438,161 @@ int main() {
             castle.SetBridgeRaised(true);
             int livingAttackers = 0; for (bool a : armyAlive)   if (a) ++livingAttackers;
             int livingArchers   = 0; for (bool a : archerAlive) if (a) ++livingArchers;
-            if (battleTimer > 12.0f || livingAttackers <= 0 || livingArchers <= 0) {
+            if (battleTimer > 5.0f || livingAttackers <= 0 || livingArchers <= 0) {
                 battle = BattlePhase::Advance; battleTimer = 0.0f;
                 castle.SetBridgeRaised(false);
             }
         } else if (battle == BattlePhase::Advance) {
             castle.SetBridgeRaised(false);
             bool doorBroken = (castle.AliveDoorPanelCount() == 0);
-            // Trigger the army march on the first frame the door
-            // is broken (mirrors Main.cpp).
+            if (battleTimer > 20.0f && !doorBroken) {
+                doorBroken = true;
+            }
+
+            // Trigger the army march in strictly TWO LINES across the drawbridge
             if (doorBroken && !armyMarchStarted) {
                 armyMarchStarted = true;
+                leadMarchDistance = 0.0f;
+                armyMarchOrder.clear();
                 for (size_t si = 0; si < army.size(); si++) {
-                    if (!armyAlive[si]) continue;
-                    vec3 p = army[si].GetPosition();
-                    armyMarchStart[si] = p;
-                    armyMarchTarget[si] = vec3(kArmyMarchTargetX, p.y, p.z);
+                    if (armyAlive[si]) {
+                        armyMarchOrder.push_back((int)si);
+                    }
                 }
             }
+
             if (armyMarchStarted) {
-                for (size_t si = 0; si < army.size(); si++) {
+                leadMarchDistance += kArmyMarchSpeed * dt;
+                float desiredLeadX = -15.0f + leadMarchDistance;
+
+                for (size_t r = 0; r < armyMarchOrder.size(); r++) {
+                    int si = armyMarchOrder[r];
                     if (!armyAlive[si]) continue;
-                    vec3 cur = army[si].GetPosition();
-                    vec3 to  = armyMarchTarget[si] - cur;
-                    float d  = length(to);
-                    if (d < 0.05f) continue;
-                    vec3 step = to / d * kArmyMarchSpeed * dt;
-                    if (length(step) > d) step = to;
-                    army[si].SetPosition(cur + step);
+                    int file = int(r % 2);       // 0 = left file, 1 = right file
+                    int pair = int(r / 2);       // 0, 1, 2, ...
+                    float targetZ = (file == 0) ? -0.85f : +0.85f;
+
+                    float desiredX = desiredLeadX - float(pair) * 2.2f;
+                    desiredX = std::max(armyOriginalPos[si].x, std::min(desiredX, 7.0f));
+
+                    // Funnel into bridge, then strictly two lines on bridge!
+                    float currentZ = targetZ;
+                    if (desiredX < -11.5f) {
+                        float tZ = (desiredX - armyOriginalPos[si].x) / (-11.5f - armyOriginalPos[si].x);
+                        tZ = glm::clamp(tZ, 0.0f, 1.0f);
+                        currentZ = glm::mix(armyOriginalPos[si].z, targetZ, tZ);
+                    } else if (desiredX > 2.0f) {
+                        float fanOut = (desiredX - 2.0f) / 5.0f;
+                        currentZ = targetZ * (1.0f + fanOut * 0.8f);
+                    }
+
+                    army[si].SetPosition(vec3(desiredX, 0.0f, currentZ));
+                    army[si].SetYaw(0.0f);
+                }
+
+                if (desiredLeadX >= 5.5f) {
+                    battle = BattlePhase::Melee;
+                    battleTimer = 0.0f;
+                    meleeTimer = 0.0f;
+                    meleeHitTimer = 0.0f;
                 }
             }
-            if (battleTimer > 18.0f || doorBroken) {
-                battle = BattlePhase::End; battleTimer = 0.0f;
-                int la = 0; for (bool a : armyAlive)   if (a) ++la;
-                int ld = 0; for (bool a : archerAlive) if (a) ++ld;
-                for (bool d : defenderAlive) if (d) ++ld;
-                goldCrest.SetVictorious(doorBroken && la > 0);
+        } else if (battle == BattlePhase::Melee) {
+            meleeTimer += dt;
+
+            // Defenders (blue) charge forward from crest toward attackers
+            for (size_t di = 0; di < defenders.size(); di++) {
+                if (!defenderAlive[di]) continue;
+                vec3 cur = defenders[di].GetPosition();
+                if (cur.x > 7.5f) {
+                    cur.x -= 3.2f * dt;
+                    defenders[di].SetPosition(cur);
+                    defenders[di].SetYaw(180.0f);
+                }
+            }
+
+            // Attackers advance to meet defenders
+            for (size_t si = 0; si < army.size(); si++) {
+                if (!armyAlive[si]) continue;
+                vec3 cur = army[si].GetPosition();
+                if (cur.x < 6.5f) {
+                    cur.x += 2.2f * dt;
+                    army[si].SetPosition(cur);
+                    army[si].SetYaw(0.0f);
+                }
+            }
+
+            // Sword strike lunges!
+            for (size_t si = 0; si < army.size(); si++) {
+                if (armyAlive[si]) {
+                    army[si].SetAttackOffset(std::sin(meleeTimer * 12.0f + float(si)) * 0.22f);
+                } else {
+                    army[si].SetAttackOffset(0.0f);
+                }
+            }
+            for (size_t di = 0; di < defenders.size(); di++) {
+                if (defenderAlive[di]) {
+                    defenders[di].SetAttackOffset(-std::sin(meleeTimer * 12.0f + float(di) * 1.5f) * 0.22f);
+                } else {
+                    defenders[di].SetAttackOffset(0.0f);
+                }
+            }
+
+            // Periodic melee combat damage: soldiers fight and DIE!
+            meleeHitTimer += dt;
+            if (meleeHitTimer >= 0.85f) {
+                meleeHitTimer = 0.0f;
+                int livingAttacker = -1;
+                for (size_t si = 0; si < army.size(); si++) {
+                    if (armyAlive[si]) { livingAttacker = (int)si; break; }
+                }
+                int livingDefender = -1;
+                for (size_t di = 0; di < defenders.size(); di++) {
+                    if (defenderAlive[di]) { livingDefender = (int)di; break; }
+                }
+
+                if (livingAttacker >= 0 && livingDefender >= 0) {
+                    defenders[livingDefender].TakeDamage(35.0f);
+                    if (defenders[livingDefender].IsDead()) {
+                        defenderAlive[livingDefender] = false;
+                        defenders[livingDefender].SetDead();
+                    }
+                    for (size_t si = livingAttacker; si < army.size(); si++) {
+                        if (armyAlive[si]) {
+                            army[si].TakeDamage(40.0f);
+                            if (army[si].IsDead()) {
+                                armyAlive[si] = false;
+                                army[si].SetDead();
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+
+            int livingDefenders = 0;
+            for (bool d : defenderAlive) if (d) ++livingDefenders;
+            int livingAttackers = 0;
+            for (bool a : armyAlive) if (a) ++livingAttackers;
+
+            if (livingDefenders <= 0 || livingAttackers <= 0 || meleeTimer > 8.0f) {
+                battle = BattlePhase::End;
+                battleTimer = 0.0f;
+                bool attackersWin = (livingAttackers > 0);
+                goldCrest.SetVictorious(attackersWin);
+                for (Soldier& s : army) s.SetAttackOffset(0.0f);
+                for (Soldier& d : defenders) d.SetAttackOffset(0.0f);
             }
         } else if (battle == BattlePhase::End) {
-            // Keep marching during End so the final frames show
-            // the army inside the castle.
-            if (armyMarchStarted) {
-                for (size_t si = 0; si < army.size(); si++) {
-                    if (!armyAlive[si]) continue;
-                    vec3 cur = army[si].GetPosition();
-                    vec3 to  = armyMarchTarget[si] - cur;
-                    float d  = length(to);
-                    if (d < 0.05f) continue;
-                    vec3 step = to / d * kArmyMarchSpeed * dt;
-                    if (length(step) > d) step = to;
-                    army[si].SetPosition(cur + step);
+            // Surviving attackers advance to surround the gold crest
+            for (size_t si = 0; si < army.size(); si++) {
+                if (!armyAlive[si]) continue;
+                vec3 cur = army[si].GetPosition();
+                if (cur.x < 14.5f) {
+                    cur.x += 1.5f * dt;
+                    army[si].SetPosition(cur);
                 }
             }
-            // Stay in End for 6 extra seconds so the gold crest
-            // pulse + army-in-castle view have time to read on
-            // camera.
             if (battleTimer > 6.0f) battleFinished = true;
         }
 
@@ -519,7 +624,7 @@ int main() {
                 }
             }
         }
-        // ---- Arrow + soldier hit detection ----
+        // ---- Arrow + soldier hit detection (soldiers survive 2 hits, die on 3rd) ----
         for (Arrow& a : arrows) {
             a.Update(dt);
             if (a.IsDead()) continue;
@@ -533,8 +638,12 @@ int main() {
                     std::fmax(-1.20f, std::fmin(d.y, 1.20f)),
                     std::fmax(-0.20f, std::fmin(d.z, 0.20f)));
                 vec3 delta = d - clamped;
-                if (glm::dot(delta, delta) <= 0.04f * 0.04f) {
-                    armyAlive[si] = false;
+                if (glm::dot(delta, delta) <= 0.05f * 0.05f) {
+                    army[si].TakeDamage(35.0f);
+                    if (army[si].IsDead()) {
+                        armyAlive[si] = false;
+                        army[si].SetDead();
+                    }
                     a.Kill();
                     break;
                 }
@@ -632,9 +741,9 @@ int main() {
         for (size_t i = 0; i < wallSoldiers.size(); i++)
             if (wallSoldierAlive[i]) wallSoldiers[i].Draw(shaderProgram);
         for (size_t i = 0; i < army.size(); i++)
-            if (armyAlive[i]) army[i].Draw(shaderProgram);
+            if (armyAlive[i] || army[i].GetPitch() != 0.0f) army[i].Draw(shaderProgram);
         for (size_t i = 0; i < defenders.size(); i++)
-            if (defenderAlive[i]) defenders[i].Draw(shaderProgram);
+            if (defenderAlive[i] || defenders[i].GetPitch() != 0.0f) defenders[i].Draw(shaderProgram);
         for (CampTent& t : tents) t.Draw(shaderProgram);
         for (Tree& t : trees) t.Draw(shaderProgram);
         goldCrest.Draw(shaderProgram);
